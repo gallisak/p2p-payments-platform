@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { FindOperator } from 'typeorm';
 import request from 'supertest';
 import { AuthModule } from '../src/auth/auth.module';
 import { WalletsModule } from '../src/wallets/wallets.module';
@@ -15,11 +16,32 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function inMemoryRepo<T extends { id?: string }>(rows: T[]) {
-  const matches = (row: T, where: Partial<T>) =>
-    Object.entries(where).every(
-      ([key, value]) => row[key as keyof T] === value,
-    );
+  const matches = (row: T, where: Record<string, unknown>) =>
+    Object.entries(where).every(([key, value]) => {
+      const actual = row[key as keyof T];
+      if (value instanceof FindOperator) {
+        if (value.type !== 'moreThanOrEqual') {
+          throw new Error(`unsupported operator ${value.type}`);
+        }
+        return Number(actual) >= Number(value.value);
+      }
+      return actual === value;
+    });
+  const addTo =
+    (sign: 1 | -1) =>
+    async (where: Record<string, unknown>, column: keyof T, value: string) => {
+      const hit = rows.filter((row) => matches(row, where));
+      for (const row of hit) {
+        (row[column] as unknown) = (
+          Number(row[column]) +
+          sign * Number(value)
+        ).toFixed(2);
+      }
+      return { affected: hit.length };
+    };
   return {
+    increment: jest.fn(addTo(1)),
+    decrement: jest.fn(addTo(-1)),
     rows,
     findOne: jest.fn(async ({ where }: { where: Partial<T> }) => {
       if (where.id !== undefined && !UUID_RE.test(String(where.id))) {
