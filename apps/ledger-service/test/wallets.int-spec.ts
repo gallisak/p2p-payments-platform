@@ -104,4 +104,14 @@ describe('Wallets on Postgres (integration)', () => {
     await send(walletId, 'withdraw', 50.01).expect(400);
     expect(await balanceOf(walletId)).toBe('50.00');
   });
+
+  it('compares balance and amount as numbers, not as text', async () => {
+    const walletId = await walletWithBalance('9.00');
+
+    await send(walletId, 'withdraw', 10).expect(400);
+    expect(await balanceOf(walletId)).toBe('9.00');
+
+    await send(walletId, 'withdraw', 9).expect(201);
+    expect(await balanceOf(walletId)).toBe('0.00');
+  });
 });
