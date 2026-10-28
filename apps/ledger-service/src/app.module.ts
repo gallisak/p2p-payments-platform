@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { InternalModule } from './internal/internal.module';
+import { AdminModule } from './admin/admin.module';
 import { User } from './auth/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
 import { Hold } from './wallets/entities/hold.entity';
@@ -26,6 +27,7 @@ import { LedgerEntry } from './ledger/entities/ledger-entry.entity';
     AuthModule,
     WalletsModule,
     InternalModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

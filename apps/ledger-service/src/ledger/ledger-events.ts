@@ -43,6 +43,12 @@ export interface TransferReceivedPayload {
   currency: string;
 }
 
+export interface WalletBlockedPayload {
+  reason: string;
+}
+
+export type WalletUnblockedPayload = Record<string, never>;
+
 export interface LedgerEventPayloads {
   WalletOpened: WalletOpenedPayload;
   MoneyDeposited: MoneyMovedPayload;
@@ -51,6 +57,8 @@ export interface LedgerEventPayloads {
   HoldReleased: HoldPayload;
   TransferCompleted: TransferCompletedPayload;
   TransferReceived: TransferReceivedPayload;
+  WalletBlocked: WalletBlockedPayload;
+  WalletUnblocked: WalletUnblockedPayload;
 }
 
 export type LedgerEventType = keyof LedgerEventPayloads;
@@ -63,6 +71,8 @@ export const CURRENT_SCHEMA_VERSION: Record<LedgerEventType, number> = {
   HoldReleased: 1,
   TransferCompleted: 1,
   TransferReceived: 1,
+  WalletBlocked: 1,
+  WalletUnblocked: 1,
 };
 
 export interface StoredEvent<T extends LedgerEventType = LedgerEventType> {

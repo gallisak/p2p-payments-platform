@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Wallet } from './entities/wallet.entity';
 import { Currency } from './wallets.constants';
 import { WalletLedger } from './wallet-ledger.service';
@@ -76,6 +76,34 @@ export class WalletsService {
     }
   }
 
+  async block(walletId: string, actorId: string, reason: string): Promise<Wallet> {
+    return this.dataSource.transaction(async (manager) => {
+      const wallet = await this.lockExisting(manager, walletId);
+      if (wallet.blocked) {
+        return wallet;
+      }
+      return this.ledger.record(manager, wallet, 'WalletBlocked', { reason }, actorId);
+    });
+  }
+
+  async unblock(walletId: string, actorId: string): Promise<Wallet> {
+    return this.dataSource.transaction(async (manager) => {
+      const wallet = await this.lockExisting(manager, walletId);
+      if (!wallet.blocked) {
+        return wallet;
+      }
+      return this.ledger.record(manager, wallet, 'WalletUnblocked', {}, actorId);
+    });
+  }
+
+  private async lockExisting(manager: EntityManager, walletId: string): Promise<Wallet> {
+    const wallet = (await this.ledger.lockAll(manager, [walletId])).get(walletId);
+    if (!wallet) {
+      throw new NotFoundException('Гаманець не знайдено');
+    }
+    return wallet;
+  }
+
   async deposit(
     walletId: string,
     ownerId: string,
@@ -84,6 +112,7 @@ export class WalletsService {
     const cents = toCents(amount);
     return this.dataSource.transaction(async (manager) => {
       const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
+      this.ledger.assertActive(wallet);
       return this.ledger.record(manager, wallet, 'MoneyDeposited', {
         operationId: randomUUID(),
         amount: formatCents(cents),
@@ -101,6 +130,7 @@ export class WalletsService {
     const cents = toCents(amount);
     return this.dataSource.transaction(async (manager) => {
       const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
+      this.ledger.assertActive(wallet);
       if (this.ledger.available(wallet) < cents) {
         throw new BadRequestException('Недостатньо коштів');
       }

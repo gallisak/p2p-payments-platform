@@ -19,6 +19,9 @@ export class Wallet {
   @Column('numeric', { precision: 18, scale: 2, default: 0 })
   held: string;
 
+  @Column('boolean', { default: false })
+  blocked: boolean;
+
   @Column('int', { default: 0 })
   version: number;
 }

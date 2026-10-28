@@ -49,6 +49,7 @@ export class HoldsService {
         if (existing) {
           return this.samePlacement(existing, input.walletId, cents);
         }
+        this.ledger.assertActive(wallet);
         if (this.ledger.available(wallet) < cents) {
           throw new BadRequestException('Недостатньо коштів');
         }
@@ -133,6 +134,8 @@ export class HoldsService {
         );
       }
       const sender = this.required(wallets, walletId);
+      this.ledger.assertActive(sender);
+      this.ledger.assertActive(recipient);
       const debitCents = toCents(hold.amount);
       if (recipient.currency === sender.currency && creditCents !== debitCents) {
         throw new BadRequestException(

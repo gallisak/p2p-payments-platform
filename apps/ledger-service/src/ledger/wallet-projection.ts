@@ -11,9 +11,14 @@ import { upcast } from './upcasters';
 export interface WalletState {
   balance: bigint;
   held: bigint;
+  blocked: boolean;
 }
 
-export const EMPTY_WALLET: WalletState = { balance: 0n, held: 0n };
+export const EMPTY_WALLET: WalletState = {
+  balance: 0n,
+  held: 0n,
+  blocked: false,
+};
 
 export function applyEvent(state: WalletState, event: StoredEvent): WalletState {
   switch (event.type) {
@@ -41,7 +46,11 @@ export function applyEvent(state: WalletState, event: StoredEvent): WalletState 
       };
     case 'TransferCompleted': {
       const amount = toCents((event.payload as TransferCompletedPayload).amount);
-      return { balance: state.balance - amount, held: state.held - amount };
+      return {
+        ...state,
+        balance: state.balance - amount,
+        held: state.held - amount,
+      };
     }
     case 'TransferReceived':
       return {
@@ -49,6 +58,10 @@ export function applyEvent(state: WalletState, event: StoredEvent): WalletState 
         balance:
           state.balance + toCents((event.payload as TransferReceivedPayload).amount),
       };
+    case 'WalletBlocked':
+      return { ...state, blocked: true };
+    case 'WalletUnblocked':
+      return { ...state, blocked: false };
     default:
       throw new Error(`Unhandled event type ${String(event.type)}`);
   }
