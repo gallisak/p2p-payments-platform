@@ -12,7 +12,9 @@ export class User {
   @Column()
   passwordHash: string;
 
-  @Column({ nullable: true })
+  // Тип колонки вказано явно: для `string | null` TypeScript передає в
+  // метадані тип Object, і TypeORM не може підібрати тип для Postgres.
+  @Column({ type: 'varchar', nullable: true })
   refreshTokenHash: string | null;
 
   @Column({ default: 'user' })
