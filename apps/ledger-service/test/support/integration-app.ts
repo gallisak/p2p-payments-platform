@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AuthModule } from '../../src/auth/auth.module';
 import { WalletsModule } from '../../src/wallets/wallets.module';
 import { InternalModule } from '../../src/internal/internal.module';
+import { AdminModule } from '../../src/admin/admin.module';
 import { INTERNAL_API_KEY_HEADER } from '../../src/internal/internal-api-key.guard';
 import { User } from '../../src/auth/entities/user.entity';
 import { Wallet } from '../../src/wallets/entities/wallet.entity';
@@ -16,6 +17,8 @@ import { LedgerEntry } from '../../src/ledger/entities/ledger-entry.entity';
 process.env.JWT_ACCESS_SECRET ??= 'int-access';
 process.env.JWT_REFRESH_SECRET ??= 'int-refresh';
 process.env.INTERNAL_API_KEY ??= 'int-internal-key';
+process.env.ADMIN_EMAIL ??= 'admin@example.com';
+process.env.ADMIN_PASSWORD ??= 'admin-password';
 
 export const testDatabase = {
   host: process.env.DATABASE_HOST ?? 'localhost',
@@ -41,6 +44,7 @@ export interface IntegrationApp {
     body?: object,
   ) => request.Test;
   registerUser: () => Promise<{ token: string; userId: string }>;
+  adminToken: () => Promise<string>;
   openWallet: (token: string, currency?: string) => Promise<string>;
 }
 
@@ -57,6 +61,7 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
       AuthModule,
       WalletsModule,
       InternalModule,
+      AdminModule,
     ],
   }).compile();
 
@@ -84,6 +89,17 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
     return { token: res.body.accessToken as string, userId: user.id };
   };
 
+  const adminToken = async () => {
+    const res = await http()
+      .post('/auth/login')
+      .send({
+        email: process.env.ADMIN_EMAIL,
+        password: process.env.ADMIN_PASSWORD,
+      })
+      .expect(201);
+    return res.body.accessToken as string;
+  };
+
   const openWallet = async (token: string, currency = 'USD') => {
     const res = await http()
       .post('/wallets')
@@ -93,5 +109,13 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
     return res.body.id as string;
   };
 
-  return { app, dataSource, http, internal, registerUser, openWallet };
+  return {
+    app,
+    dataSource,
+    http,
+    internal,
+    registerUser,
+    adminToken,
+    openWallet,
+  };
 }

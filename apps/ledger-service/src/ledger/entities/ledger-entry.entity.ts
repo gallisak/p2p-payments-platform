@@ -28,6 +28,7 @@ export class LedgerEntry {
   @Column('numeric', { precision: 18, scale: 2 })
   amount: string;
 
+  @Index()
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

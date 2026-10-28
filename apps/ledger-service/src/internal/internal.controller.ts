@@ -31,7 +31,12 @@ export class InternalController {
       throw new NotFoundException('Отримувача не знайдено');
     }
     const wallet = await this.wallets.open(userId, dto.currency);
-    return { walletId: wallet.id, ownerId: wallet.ownerId, currency: wallet.currency };
+    return {
+      walletId: wallet.id,
+      ownerId: wallet.ownerId,
+      currency: wallet.currency,
+      blocked: wallet.blocked,
+    };
   }
 
   @Post('holds')

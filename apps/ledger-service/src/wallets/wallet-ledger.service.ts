@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { Wallet } from './entities/wallet.entity';
 import { EventStore } from '../ledger/event-store.service';
@@ -9,6 +9,8 @@ import {
 } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
 import { applyEvent } from '../ledger/wallet-projection';
+
+export const WALLET_LOCKED_STATUS = 423;
 
 @Injectable()
 export class WalletLedger {
@@ -46,6 +48,12 @@ export class WalletLedger {
     return locked;
   }
 
+  assertActive(wallet: Wallet): void {
+    if (wallet.blocked) {
+      throw new HttpException('Гаманець заблоковано', WALLET_LOCKED_STATUS);
+    }
+  }
+
   available(wallet: Wallet): bigint {
     return toCents(wallet.balance) - toCents(wallet.held);
   }
@@ -65,7 +73,11 @@ export class WalletLedger {
       metadata: { actorId },
     });
     const state = applyEvent(
-      { balance: toCents(wallet.balance), held: toCents(wallet.held) },
+      {
+        balance: toCents(wallet.balance),
+        held: toCents(wallet.held),
+        blocked: wallet.blocked,
+      },
       {
         type,
         schemaVersion: CURRENT_SCHEMA_VERSION[type],
@@ -75,6 +87,7 @@ export class WalletLedger {
     );
     wallet.balance = formatCents(state.balance);
     wallet.held = formatCents(state.held);
+    wallet.blocked = state.blocked;
     wallet.version = event.streamVersion;
     return manager.save(wallet);
   }
