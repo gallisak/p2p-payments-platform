@@ -3,6 +3,7 @@ import { formatCents, toCents } from './money';
 export interface Posting {
   accountId: string;
   amount: string;
+  currency: string;
 }
 
 export interface WalletOpenedPayload {
@@ -17,18 +18,51 @@ export interface MoneyMovedPayload {
   postings: Posting[];
 }
 
+export interface HoldPayload {
+  holdId: string;
+  amount: string;
+  currency: string;
+}
+
+export interface TransferCompletedPayload {
+  operationId: string;
+  holdId: string;
+  amount: string;
+  currency: string;
+  toWalletId: string;
+  creditAmount: string;
+  creditCurrency: string;
+  postings: Posting[];
+}
+
+export interface TransferReceivedPayload {
+  operationId: string;
+  holdId: string;
+  fromWalletId: string;
+  amount: string;
+  currency: string;
+}
+
 export interface LedgerEventPayloads {
   WalletOpened: WalletOpenedPayload;
   MoneyDeposited: MoneyMovedPayload;
   MoneyWithdrawn: MoneyMovedPayload;
+  HoldPlaced: HoldPayload;
+  HoldReleased: HoldPayload;
+  TransferCompleted: TransferCompletedPayload;
+  TransferReceived: TransferReceivedPayload;
 }
 
 export type LedgerEventType = keyof LedgerEventPayloads;
 
 export const CURRENT_SCHEMA_VERSION: Record<LedgerEventType, number> = {
   WalletOpened: 1,
-  MoneyDeposited: 1,
-  MoneyWithdrawn: 1,
+  MoneyDeposited: 2,
+  MoneyWithdrawn: 2,
+  HoldPlaced: 1,
+  HoldReleased: 1,
+  TransferCompleted: 1,
+  TransferReceived: 1,
 };
 
 export interface StoredEvent<T extends LedgerEventType = LedgerEventType> {
@@ -42,10 +76,18 @@ export function externalAccount(currency: string): string {
   return `external:${currency}`;
 }
 
+export function fxAccount(currency: string): string {
+  return `fx:${currency}`;
+}
+
 function assertPositive(amount: bigint): void {
   if (amount <= 0n) {
     throw new Error(`Amount must be positive, got ${formatCents(amount)}`);
   }
+}
+
+function posting(accountId: string, amount: bigint, currency: string): Posting {
+  return { accountId, amount: formatCents(amount), currency };
 }
 
 export function depositPostings(
@@ -55,8 +97,8 @@ export function depositPostings(
 ): Posting[] {
   assertPositive(amount);
   return [
-    { accountId: externalAccount(currency), amount: formatCents(-amount) },
-    { accountId: walletId, amount: formatCents(amount) },
+    posting(externalAccount(currency), -amount, currency),
+    posting(walletId, amount, currency),
   ];
 }
 
@@ -67,8 +109,34 @@ export function withdrawalPostings(
 ): Posting[] {
   assertPositive(amount);
   return [
-    { accountId: walletId, amount: formatCents(-amount) },
-    { accountId: externalAccount(currency), amount: formatCents(amount) },
+    posting(walletId, -amount, currency),
+    posting(externalAccount(currency), amount, currency),
+  ];
+}
+
+export interface TransferLeg {
+  walletId: string;
+  currency: string;
+  amount: bigint;
+}
+
+export function transferPostings(from: TransferLeg, to: TransferLeg): Posting[] {
+  assertPositive(from.amount);
+  assertPositive(to.amount);
+  if (from.currency === to.currency) {
+    if (from.amount !== to.amount) {
+      throw new Error('A same-currency transfer must credit what it debits');
+    }
+    return [
+      posting(from.walletId, -from.amount, from.currency),
+      posting(to.walletId, to.amount, to.currency),
+    ];
+  }
+  return [
+    posting(from.walletId, -from.amount, from.currency),
+    posting(fxAccount(from.currency), from.amount, from.currency),
+    posting(fxAccount(to.currency), -to.amount, to.currency),
+    posting(to.walletId, to.amount, to.currency),
   ];
 }
 
@@ -76,8 +144,15 @@ export function assertBalanced(postings: Posting[]): void {
   if (postings.length < 2) {
     throw new Error('A ledger operation needs at least two postings');
   }
-  const total = postings.reduce((sum, p) => sum + toCents(p.amount), 0n);
-  if (total !== 0n) {
-    throw new Error(`Postings do not balance: total ${formatCents(total)}`);
+  const totals = new Map<string, bigint>();
+  for (const p of postings) {
+    totals.set(p.currency, (totals.get(p.currency) ?? 0n) + toCents(p.amount));
+  }
+  for (const [currency, total] of totals) {
+    if (total !== 0n) {
+      throw new Error(
+        `Postings do not balance in ${currency}: total ${formatCents(total)}`,
+      );
+    }
   }
 }

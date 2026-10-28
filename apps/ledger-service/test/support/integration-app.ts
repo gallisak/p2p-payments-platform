@@ -5,13 +5,17 @@ import { DataSource } from 'typeorm';
 import request from 'supertest';
 import { AuthModule } from '../../src/auth/auth.module';
 import { WalletsModule } from '../../src/wallets/wallets.module';
+import { InternalModule } from '../../src/internal/internal.module';
+import { INTERNAL_API_KEY_HEADER } from '../../src/internal/internal-api-key.guard';
 import { User } from '../../src/auth/entities/user.entity';
 import { Wallet } from '../../src/wallets/entities/wallet.entity';
+import { Hold } from '../../src/wallets/entities/hold.entity';
 import { LedgerEvent } from '../../src/ledger/entities/ledger-event.entity';
 import { LedgerEntry } from '../../src/ledger/entities/ledger-entry.entity';
 
 process.env.JWT_ACCESS_SECRET ??= 'int-access';
 process.env.JWT_REFRESH_SECRET ??= 'int-refresh';
+process.env.INTERNAL_API_KEY ??= 'int-internal-key';
 
 export const testDatabase = {
   host: process.env.DATABASE_HOST ?? 'localhost',
@@ -31,6 +35,11 @@ export interface IntegrationApp {
   app: INestApplication;
   dataSource: DataSource;
   http: () => ReturnType<typeof request>;
+  internal: (
+    method: 'get' | 'post',
+    path: string,
+    body?: object,
+  ) => request.Test;
   registerUser: () => Promise<{ token: string; userId: string }>;
   openWallet: (token: string, currency?: string) => Promise<string>;
 }
@@ -41,12 +50,13 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
       TypeOrmModule.forRoot({
         type: 'postgres',
         ...testDatabase,
-        entities: [User, Wallet, LedgerEvent, LedgerEntry],
+        entities: [User, Wallet, Hold, LedgerEvent, LedgerEntry],
         synchronize: true,
         dropSchema: true,
       }),
       AuthModule,
       WalletsModule,
+      InternalModule,
     ],
   }).compile();
 
@@ -55,6 +65,13 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
   await app.init();
   const dataSource = moduleRef.get(DataSource);
   const http = () => request(app.getHttpServer());
+  const internal = (method: 'get' | 'post', path: string, body?: object) => {
+    const req = http()[method](`/internal${path}`).set(
+      INTERNAL_API_KEY_HEADER,
+      process.env.INTERNAL_API_KEY as string,
+    );
+    return body ? req.send(body) : req;
+  };
 
   let counter = 0;
   const registerUser = async () => {
@@ -76,5 +93,5 @@ export async function createIntegrationApp(): Promise<IntegrationApp> {
     return res.body.id as string;
   };
 
-  return { app, dataSource, http, registerUser, openWallet };
+  return { app, dataSource, http, internal, registerUser, openWallet };
 }
