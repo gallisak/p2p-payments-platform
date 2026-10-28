@@ -11,6 +11,7 @@
     "lint:ci": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit -p .",
     "test": "jest",
+    "test:int": "jest --config jest.int.config.json --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
@@ -56,6 +57,7 @@
     "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": ".",
     "testRegex": "(/test/.*|\\.(test|spec))\\.ts$",
+    "testPathIgnorePatterns": ["/node_modules/", "\\.int-spec\\.ts$"],
     "transform": { "^.+\\.(t|j)s$": "ts-jest" },
     "collectCoverageFrom": ["src/**/*.(t|j)s"]
   }
