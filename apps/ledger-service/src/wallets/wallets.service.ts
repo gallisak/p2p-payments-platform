@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { Wallet } from './entities/wallet.entity';
 
 @Injectable()
@@ -44,9 +44,15 @@ export class WalletsService {
     ownerId: string,
     amount: number,
   ): Promise<Wallet> {
-    const wallet = await this.getById(walletId, ownerId);
-    wallet.balance = (Number(wallet.balance) + amount).toFixed(2);
-    return this.wallets.save(wallet);
+    const result = await this.wallets.increment(
+      { id: walletId, ownerId },
+      'balance',
+      amount.toFixed(2),
+    );
+    if (!result.affected) {
+      throw new NotFoundException('Гаманець не знайдено');
+    }
+    return this.getById(walletId, ownerId);
   }
 
   async withdraw(
@@ -54,12 +60,16 @@ export class WalletsService {
     ownerId: string,
     amount: number,
   ): Promise<Wallet> {
-    const wallet = await this.getById(walletId, ownerId);
-    const current = Number(wallet.balance);
-    if (current < amount) {
+    const value = amount.toFixed(2);
+    const result = await this.wallets.decrement(
+      { id: walletId, ownerId, balance: MoreThanOrEqual(value) },
+      'balance',
+      value,
+    );
+    if (!result.affected) {
+      await this.getById(walletId, ownerId);
       throw new BadRequestException('Недостатньо коштів');
     }
-    wallet.balance = (current - amount).toFixed(2);
-    return this.wallets.save(wallet);
+    return this.getById(walletId, ownerId);
   }
 }
