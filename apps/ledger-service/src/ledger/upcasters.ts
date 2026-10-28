@@ -10,7 +10,18 @@ export type Upcaster = (
 
 export type UpcasterRegistry = Partial<Record<string, Upcaster>>;
 
-export const UPCASTERS: UpcasterRegistry = {};
+const addCurrencyToPostings: Upcaster = (payload) => ({
+  ...payload,
+  postings: (payload.postings as Record<string, unknown>[]).map((posting) => ({
+    ...posting,
+    currency: payload.currency,
+  })),
+});
+
+export const UPCASTERS: UpcasterRegistry = {
+  'MoneyDeposited@1': addCurrencyToPostings,
+  'MoneyWithdrawn@1': addCurrencyToPostings,
+};
 
 export function upcast(
   event: StoredEvent,

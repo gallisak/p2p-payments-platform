@@ -4,9 +4,13 @@ import { LedgerEvent } from '../src/ledger/entities/ledger-event.entity';
 import { LedgerEntry } from '../src/ledger/entities/ledger-entry.entity';
 import { EventStore } from '../src/ledger/event-store.service';
 import { AppendOnlyGuard } from '../src/ledger/append-only.guard';
-import { StoredEvent } from '../src/ledger/ledger-events';
+import {
+  CURRENT_SCHEMA_VERSION,
+  LedgerEventType,
+  StoredEvent,
+} from '../src/ledger/ledger-events';
 import { formatCents, toCents } from '../src/ledger/money';
-import { foldBalance } from '../src/ledger/wallet-projection';
+import { foldWallet } from '../src/ledger/wallet-projection';
 import { IntegrationApp, createIntegrationApp } from './support/integration-app';
 
 function seededRandom(seed: number) {
@@ -68,7 +72,9 @@ describe('Event-sourced ledger on Postgres (integration)', () => {
       [2, 'MoneyDeposited'],
       [3, 'MoneyWithdrawn'],
     ]);
-    expect(events.every((e) => e.schemaVersion === 1)).toBe(true);
+    expect(events.map((e) => e.schemaVersion)).toEqual(
+      events.map((e) => CURRENT_SCHEMA_VERSION[e.type as LedgerEventType]),
+    );
     const wallet = await ctx.dataSource
       .getRepository(Wallet)
       .findOneByOrFail({ id: walletId });
@@ -111,6 +117,31 @@ describe('Event-sourced ledger on Postgres (integration)', () => {
       code: '23505',
       detail: expect.stringContaining('"streamId", "streamVersion"'),
     });
+    expect(await eventsOf(walletId)).toHaveLength(1);
+  });
+
+  it('refuses to store postings without an operation id', async () => {
+    const user = await ctx.registerUser();
+    const walletId = await ctx.openWallet(user.token);
+    const store = ctx.app.get(EventStore);
+
+    await expect(
+      ctx.dataSource.transaction((manager) =>
+        store.append(manager, {
+          streamId: walletId,
+          expectedVersion: 1,
+          type: 'MoneyDeposited',
+          payload: {
+            amount: '1.00',
+            currency: 'USD',
+            postings: [
+              { accountId: 'external:USD', amount: '-1.00', currency: 'USD' },
+              { accountId: walletId, amount: '1.00', currency: 'USD' },
+            ],
+          } as never,
+        }),
+      ),
+    ).rejects.toThrow('has postings but no operationId');
     expect(await eventsOf(walletId)).toHaveLength(1);
   });
 
@@ -196,8 +227,9 @@ describe('Event-sourced ledger on Postgres (integration)', () => {
         const wallet = await ctx.dataSource
           .getRepository(Wallet)
           .findOneByOrFail({ id });
-        const rebuilt = foldBalance(asStored(await eventsOf(id)));
-        expect(formatCents(rebuilt)).toBe(wallet.balance);
+        const rebuilt = foldWallet(asStored(await eventsOf(id)));
+        expect(formatCents(rebuilt.balance)).toBe(wallet.balance);
+        expect(formatCents(rebuilt.held)).toBe(wallet.held);
       }
     });
 

@@ -5,21 +5,14 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Wallet } from './entities/wallet.entity';
 import { Currency } from './wallets.constants';
+import { WalletLedger } from './wallet-ledger.service';
 import { EventStore } from '../ledger/event-store.service';
-import {
-  LedgerEventType,
-  MoneyMovedPayload,
-  Posting,
-  depositPostings,
-  withdrawalPostings,
-} from '../ledger/ledger-events';
+import { depositPostings, withdrawalPostings } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
-import { applyToBalance } from '../ledger/wallet-projection';
-
-const UNIQUE_VIOLATION = '23505';
+import { isUniqueViolation } from '../common/db-errors';
 
 @Injectable()
 export class WalletsService {
@@ -27,6 +20,7 @@ export class WalletsService {
     @InjectRepository(Wallet) private readonly wallets: Repository<Wallet>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly eventStore: EventStore,
+    private readonly ledger: WalletLedger,
   ) {}
 
   async listForUser(userId: string): Promise<Wallet[]> {
@@ -69,12 +63,13 @@ export class WalletsService {
             ownerId,
             currency,
             balance: '0.00',
+            held: '0.00',
             version: event.streamVersion,
           }),
         );
       });
     } catch (err) {
-      if (!this.isUniqueViolation(err)) {
+      if (!isUniqueViolation(err)) {
         throw err;
       }
       return this.wallets.findOneOrFail({ where: { ownerId, currency } });
@@ -88,14 +83,13 @@ export class WalletsService {
   ): Promise<Wallet> {
     const cents = toCents(amount);
     return this.dataSource.transaction(async (manager) => {
-      const wallet = await this.lockWallet(manager, walletId, ownerId);
-      return this.record(
-        manager,
-        wallet,
-        'MoneyDeposited',
-        cents,
-        depositPostings(wallet.id, wallet.currency, cents),
-      );
+      const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
+      return this.ledger.record(manager, wallet, 'MoneyDeposited', {
+        operationId: randomUUID(),
+        amount: formatCents(cents),
+        currency: wallet.currency,
+        postings: depositPostings(wallet.id, wallet.currency, cents),
+      });
     });
   }
 
@@ -106,71 +100,16 @@ export class WalletsService {
   ): Promise<Wallet> {
     const cents = toCents(amount);
     return this.dataSource.transaction(async (manager) => {
-      const wallet = await this.lockWallet(manager, walletId, ownerId);
-      if (toCents(wallet.balance) < cents) {
+      const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
+      if (this.ledger.available(wallet) < cents) {
         throw new BadRequestException('Недостатньо коштів');
       }
-      return this.record(
-        manager,
-        wallet,
-        'MoneyWithdrawn',
-        cents,
-        withdrawalPostings(wallet.id, wallet.currency, cents),
-      );
+      return this.ledger.record(manager, wallet, 'MoneyWithdrawn', {
+        operationId: randomUUID(),
+        amount: formatCents(cents),
+        currency: wallet.currency,
+        postings: withdrawalPostings(wallet.id, wallet.currency, cents),
+      });
     });
-  }
-
-  private async lockWallet(
-    manager: EntityManager,
-    walletId: string,
-    ownerId: string,
-  ): Promise<Wallet> {
-    const wallet = await manager.findOne(Wallet, {
-      where: { id: walletId, ownerId },
-      lock: { mode: 'pessimistic_write' },
-    });
-    if (!wallet) {
-      throw new NotFoundException('Гаманець не знайдено');
-    }
-    return wallet;
-  }
-
-  private async record(
-    manager: EntityManager,
-    wallet: Wallet,
-    type: Extract<LedgerEventType, 'MoneyDeposited' | 'MoneyWithdrawn'>,
-    cents: bigint,
-    postings: Posting[],
-  ): Promise<Wallet> {
-    const payload: MoneyMovedPayload = {
-      operationId: randomUUID(),
-      amount: formatCents(cents),
-      currency: wallet.currency,
-      postings,
-    };
-    const event = await this.eventStore.append(manager, {
-      streamId: wallet.id,
-      expectedVersion: wallet.version,
-      type,
-      payload,
-      metadata: { actorId: wallet.ownerId },
-    });
-    const balance = applyToBalance(toCents(wallet.balance), {
-      type,
-      schemaVersion: event.schemaVersion,
-      streamVersion: event.streamVersion,
-      payload,
-    });
-    wallet.balance = formatCents(balance);
-    wallet.version = event.streamVersion;
-    return manager.save(wallet);
-  }
-
-  private isUniqueViolation(err: unknown): boolean {
-    return (
-      err instanceof QueryFailedError &&
-      (err.driverError as { code?: string } | undefined)?.code ===
-        UNIQUE_VIOLATION
-    );
   }
 }

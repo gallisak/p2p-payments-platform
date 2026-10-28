@@ -55,6 +55,11 @@ export class AuthService implements OnModuleInit {
     return this.issueTokens(user);
   }
 
+  async findUserIdByEmail(email: string): Promise<string | null> {
+    const user = await this.users.findOne({ where: { email } });
+    return user?.id ?? null;
+  }
+
   async refresh(refreshToken: string): Promise<TokenPair> {
     let payload: { sub: string };
     try {

@@ -7,7 +7,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   LedgerEventPayloads,
   LedgerEventType,
-  MoneyMovedPayload,
+  Posting,
   assertBalanced,
 } from './ledger-events';
 
@@ -25,8 +25,14 @@ export class EventStore {
     manager: EntityManager,
     input: AppendInput<T>,
   ): Promise<LedgerEvent> {
-    const postings = (input.payload as Partial<MoneyMovedPayload>).postings;
+    const { postings, operationId } = input.payload as {
+      postings?: Posting[];
+      operationId?: string;
+    };
     if (postings) {
+      if (!operationId) {
+        throw new Error(`${input.type} has postings but no operationId`);
+      }
       assertBalanced(postings);
     }
 
@@ -43,14 +49,13 @@ export class EventStore {
     );
 
     if (postings) {
-      const { operationId, currency } = input.payload as MoneyMovedPayload;
       await manager.insert(
         LedgerEntry,
         postings.map((posting) => ({
           operationId,
           eventId: event.eventId,
           accountId: posting.accountId,
-          currency,
+          currency: posting.currency,
           amount: posting.amount,
         })),
       );
