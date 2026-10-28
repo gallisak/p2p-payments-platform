@@ -14,7 +14,7 @@ describe('Wallets API on Postgres (integration)', () => {
   });
 
   afterAll(async () => {
-    await ctx.app.close();
+    await ctx.close();
   });
 
   const send = (

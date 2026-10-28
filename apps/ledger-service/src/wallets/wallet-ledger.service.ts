@@ -9,12 +9,16 @@ import {
 } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
 import { applyEvent } from '../ledger/wallet-projection';
+import { OutboxWriter } from '../outbox/outbox.writer';
 
 export const WALLET_LOCKED_STATUS = 423;
 
 @Injectable()
 export class WalletLedger {
-  constructor(private readonly eventStore: EventStore) {}
+  constructor(
+    private readonly eventStore: EventStore,
+    private readonly outbox: OutboxWriter,
+  ) {}
 
   async lockOwned(
     manager: EntityManager,
@@ -89,6 +93,8 @@ export class WalletLedger {
     wallet.held = formatCents(state.held);
     wallet.blocked = state.blocked;
     wallet.version = event.streamVersion;
-    return manager.save(wallet);
+    const saved = await manager.save(wallet);
+    await this.outbox.enqueue(manager, event, saved);
+    return saved;
   }
 }

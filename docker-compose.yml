@@ -11,6 +11,24 @@ services:
       - '5433:5432'
     volumes:
       - ledger-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ledger -d ledger']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   ledger-service:
     build: ./apps/ledger-service
@@ -18,7 +36,10 @@ services:
     environment:
       DATABASE_HOST: ledger-db
     depends_on:
-      - ledger-db
+      ledger-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - '3001:3001'
 
@@ -50,3 +71,4 @@ services:
 
 volumes:
   ledger-db-data:
+  redis-data:
