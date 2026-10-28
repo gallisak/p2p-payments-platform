@@ -1,15 +1,18 @@
 import {
   ConflictException,
   Injectable,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { User } from './entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { requireJwtSecret } from './jwt-secrets';
 
 interface TokenPair {
   accessToken: string;
@@ -17,11 +20,17 @@ interface TokenPair {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly jwt: JwtService,
   ) {}
+
+  // Падаємо на старті, а не на першому логіні, якщо секрети не задані.
+  onModuleInit() {
+    requireJwtSecret('JWT_ACCESS_SECRET');
+    requireJwtSecret('JWT_REFRESH_SECRET');
+  }
 
   async register(dto: RegisterDto): Promise<TokenPair> {
     const existing = await this.users.findOne({ where: { email: dto.email } });
@@ -51,7 +60,7 @@ export class AuthService {
     let payload: { sub: string };
     try {
       payload = this.jwt.verify(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh',
+        secret: requireJwtSecret('JWT_REFRESH_SECRET'),
       });
     } catch {
       throw new UnauthorizedException('Невалідний refresh token');
@@ -60,25 +69,59 @@ export class AuthService {
     if (!user || !user.refreshTokenHash) {
       throw new UnauthorizedException('Refresh token відкликано');
     }
-    const matches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-    if (!matches) {
+    if (!this.matchesStoredHash(refreshToken, user.refreshTokenHash)) {
       throw new UnauthorizedException('Refresh token відкликано');
     }
-    return this.issueTokens(user);
+    return this.issueTokens(user, user.refreshTokenHash);
   }
 
-  private async issueTokens(user: User): Promise<TokenPair> {
+  // previousHash передається при ротації: новий хеш записується лише якщо в БД
+  // досі лежить старий (атомарний UPDATE ... WHERE). Так з двох одночасних
+  // refresh з тим самим токеном проходить рівно один.
+  private async issueTokens(
+    user: User,
+    previousHash?: string,
+  ): Promise<TokenPair> {
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwt.sign(payload, {
-      secret: process.env.JWT_ACCESS_SECRET ?? 'change-me-access',
+      secret: requireJwtSecret('JWT_ACCESS_SECRET'),
       expiresIn: process.env.JWT_ACCESS_TTL ?? '15m',
     });
     const refreshToken = this.jwt.sign(payload, {
-      secret: process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh',
+      secret: requireJwtSecret('JWT_REFRESH_SECRET'),
       expiresIn: process.env.JWT_REFRESH_TTL ?? '7d',
+      // Унікальний id: без нього два токени, видані в одну секунду, однакові.
+      jwtid: randomUUID(),
     });
-    user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.users.save(user);
+    const refreshTokenHash = this.hashToken(refreshToken);
+    if (previousHash === undefined) {
+      user.refreshTokenHash = refreshTokenHash;
+      await this.users.save(user);
+    } else {
+      const result = await this.users.update(
+        { id: user.id, refreshTokenHash: previousHash },
+        { refreshTokenHash },
+      );
+      if (result.affected !== 1) {
+        throw new UnauthorizedException('Refresh token відкликано');
+      }
+    }
     return { accessToken, refreshToken };
+  }
+
+  // Refresh-токен хешуємо SHA-256, а не bcrypt: bcrypt враховує лише перші
+  // 72 байти, а в JWT вони (заголовок + початок payload з id користувача)
+  // однакові для всіх токенів користувача — старий токен проходив би перевірку.
+  // Для довгого випадкового токена повільний хеш не потрібен.
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private matchesStoredHash(token: string, storedHash: string): boolean {
+    const actual = Buffer.from(this.hashToken(token), 'hex');
+    const expected = Buffer.from(storedHash, 'hex');
+    return (
+      actual.length === expected.length && timingSafeEqual(actual, expected)
+    );
   }
 }
