@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ledgerFetch } from '@/lib/api';
+import { TokenPair, authError, readJson, withSession } from '@/lib/session';
 
 // Проксі до ledger-service, щоб зберігати токени в httpOnly cookie,
 // а не в localStorage на клієнті.
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const body = await readJson(req);
+  if (body === undefined) {
+    return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
+  }
   try {
-    const tokens = await ledgerFetch('/auth/login', {
+    const tokens: TokenPair = await ledgerFetch('/auth/login', {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    const res = NextResponse.json({ ok: true });
-    res.cookies.set('accessToken', tokens.accessToken, { httpOnly: true, path: '/' });
-    res.cookies.set('refreshToken', tokens.refreshToken, { httpOnly: true, path: '/' });
-    return res;
+    return withSession(req, NextResponse.json({ ok: true }), tokens);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 401 });
+    return authError(err, 'invalid_credentials');
   }
 }
