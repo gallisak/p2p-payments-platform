@@ -27,22 +27,32 @@ export class WalletsService {
     return this.wallets.find({ where: { ownerId: userId } });
   }
 
-  async getById(walletId: string): Promise<Wallet> {
-    const wallet = await this.wallets.findOne({ where: { id: walletId } });
+  async getById(walletId: string, ownerId: string): Promise<Wallet> {
+    const wallet = await this.wallets.findOne({
+      where: { id: walletId, ownerId },
+    });
     if (!wallet) {
       throw new NotFoundException('Гаманець не знайдено');
     }
     return wallet;
   }
 
-  async deposit(walletId: string, amount: number): Promise<Wallet> {
-    const wallet = await this.getById(walletId);
+  async deposit(
+    walletId: string,
+    ownerId: string,
+    amount: number,
+  ): Promise<Wallet> {
+    const wallet = await this.getById(walletId, ownerId);
     wallet.balance = (Number(wallet.balance) + amount).toFixed(2);
     return this.wallets.save(wallet);
   }
 
-  async withdraw(walletId: string, amount: number): Promise<Wallet> {
-    const wallet = await this.getById(walletId);
+  async withdraw(
+    walletId: string,
+    ownerId: string,
+    amount: number,
+  ): Promise<Wallet> {
+    const wallet = await this.getById(walletId, ownerId);
     const current = Number(wallet.balance);
     if (current < amount) {
       throw new BadRequestException('Недостатньо коштів');

@@ -33,7 +33,7 @@ describe('WalletsService', () => {
       id: 'wallet-1',
       balance: '100.00',
     });
-    const result = await service.deposit('wallet-1', 50);
+    const result = await service.deposit('wallet-1', 'user-1', 50);
     expect(result.balance).toBe('150.00');
   });
 
@@ -43,7 +43,7 @@ describe('WalletsService', () => {
       balance: '100.00',
     });
     service
-      .withdraw('wallet-1', 500)
+      .withdraw('wallet-1', 'user-1', 500)
       .catch((err) => expect(err).toBeDefined());
   });
 });
