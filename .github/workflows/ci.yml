@@ -12,6 +12,20 @@ jobs:
     defaults:
       run:
         working-directory: apps/ledger-service
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+          POSTGRES_DB: ledger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ledger"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,6 +37,31 @@ jobs:
       - run: npm run lint:ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      # Dockerfile запускає `node dist/main` — перевіряємо, що збірка лягла саме туди.
+      - run: test -f dist/main.js
+      # Сервіс має реально стартувати проти Postgres: Nest починає слухати порт
+      # лише після підключення TypeORM, тож 400 на порожній логін означає,
+      # що застосунок і БД живі.
+      - name: Smoke test (boots against Postgres)
+        env:
+          PORT: 3001
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_USER: ledger
+          DATABASE_PASSWORD: ledger
+          DATABASE_NAME: ledger
+          JWT_ACCESS_SECRET: ci-access
+          JWT_REFRESH_SECRET: ci-refresh
+        run: |
+          node dist/main > /tmp/ledger.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3001/auth/login \
+              -H 'Content-Type: application/json' -d '{}') && [ "$code" = 400 ] && exit 0
+            sleep 1
+          done
+          cat /tmp/ledger.log
+          exit 1
 
   payments-service:
     runs-on: ubuntu-latest
@@ -40,6 +79,9 @@ jobs:
       - run: npm run lint:ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      # Dockerfile запускає `node dist/main` — перевіряємо, що збірка лягла саме туди.
+      - run: test -f dist/main.js
 
   notifications-service:
     runs-on: ubuntu-latest
@@ -57,6 +99,9 @@ jobs:
       - run: npm run lint:ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      # Dockerfile запускає `node dist/main` — перевіряємо, що збірка лягла саме туди.
+      - run: test -f dist/main.js
 
   frontend:
     runs-on: ubuntu-latest
