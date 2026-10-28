@@ -43,7 +43,6 @@ jobs:
           DATABASE_PORT: 5432
           DATABASE_USER: ledger
           DATABASE_PASSWORD: ledger
-          DATABASE_NAME: ledger
         run: npm run test:int
       - run: npm run build
       - run: test -f dist/main.js
