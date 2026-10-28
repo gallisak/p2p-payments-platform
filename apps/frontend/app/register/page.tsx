@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { authErrorMessage } from '@/lib/auth-messages';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,10 +19,16 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      if (!res.ok) throw new Error('Не вдалося зареєструватись');
+      if (!res.ok) {
+        throw new Error(await authErrorMessage(res, 'Не вдалося зареєструватись'));
+      }
       router.push('/wallets');
     } catch (err) {
-      setError((err as Error).message);
+      setError(
+        err instanceof TypeError
+          ? 'Немає зʼєднання з сервером'
+          : (err as Error).message,
+      );
     }
   }
 
