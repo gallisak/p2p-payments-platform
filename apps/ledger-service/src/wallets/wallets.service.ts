@@ -13,6 +13,7 @@ import { EventStore } from '../ledger/event-store.service';
 import { depositPostings, withdrawalPostings } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
 import { isUniqueViolation } from '../common/db-errors';
+import { OutboxWriter } from '../outbox/outbox.writer';
 
 @Injectable()
 export class WalletsService {
@@ -21,6 +22,7 @@ export class WalletsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly eventStore: EventStore,
     private readonly ledger: WalletLedger,
+    private readonly outbox: OutboxWriter,
   ) {}
 
   async listForUser(userId: string): Promise<Wallet[]> {
@@ -57,16 +59,19 @@ export class WalletsService {
           payload: { ownerId, currency },
           metadata: { actorId: ownerId },
         });
-        return manager.save(
+        const wallet = await manager.save(
           manager.create(Wallet, {
             id: walletId,
             ownerId,
             currency,
             balance: '0.00',
             held: '0.00',
+            blocked: false,
             version: event.streamVersion,
           }),
         );
+        await this.outbox.enqueue(manager, event, wallet);
+        return wallet;
       });
     } catch (err) {
       if (!isUniqueViolation(err)) {

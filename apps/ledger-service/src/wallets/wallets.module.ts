@@ -7,9 +7,10 @@ import { Hold } from './entities/hold.entity';
 import { HoldsService } from './holds.service';
 import { WalletLedger } from './wallet-ledger.service';
 import { LedgerModule } from '../ledger/ledger.module';
+import { OutboxModule } from '../outbox/outbox.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Wallet, Hold]), LedgerModule],
+  imports: [TypeOrmModule.forFeature([Wallet, Hold]), LedgerModule, OutboxModule],
   controllers: [WalletsController],
   providers: [WalletsService, WalletLedger, HoldsService],
   exports: [WalletsService, HoldsService],

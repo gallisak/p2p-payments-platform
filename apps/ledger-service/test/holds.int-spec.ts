@@ -24,7 +24,7 @@ describe('Holds and transfer settlement on Postgres (integration)', () => {
   });
 
   afterAll(async () => {
-    await ctx.app.close();
+    await ctx.close();
   });
 
   async function account(currency = 'USD', funds = 0): Promise<Account> {
