@@ -5,6 +5,8 @@ import { AuthModule } from './auth/auth.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { User } from './auth/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
+import { LedgerEvent } from './ledger/entities/ledger-event.entity';
+import { LedgerEntry } from './ledger/entities/ledger-entry.entity';
 
 @Module({
   imports: [
@@ -16,7 +18,7 @@ import { Wallet } from './wallets/entities/wallet.entity';
       username: process.env.DATABASE_USER,
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
-      entities: [User, Wallet],
+      entities: [User, Wallet, LedgerEvent, LedgerEntry],
       synchronize: true, // OK для стартового репо; у бойовому коді — міграції
     }),
     AuthModule,

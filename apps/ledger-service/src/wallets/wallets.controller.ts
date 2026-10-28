@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WalletsService } from './wallets.service';
 import { DepositDto } from './dto/deposit.dto';
 import { WithdrawDto } from './dto/withdraw.dto';
+import { OpenWalletDto } from './dto/open-wallet.dto';
 
 interface AuthenticatedRequest {
   user: { userId: string; email: string; role: string };
@@ -25,6 +26,11 @@ export class WalletsController {
   @Get()
   list(@Request() req: AuthenticatedRequest) {
     return this.wallets.listForUser(req.user.userId);
+  }
+
+  @Post()
+  open(@Request() req: AuthenticatedRequest, @Body() dto: OpenWalletDto) {
+    return this.wallets.open(req.user.userId, dto.currency);
   }
 
   @Get(':id')

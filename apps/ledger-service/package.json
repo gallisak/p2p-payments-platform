@@ -57,7 +57,7 @@
     "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": ".",
     "testRegex": "(/test/.*|\\.(test|spec))\\.ts$",
-    "testPathIgnorePatterns": ["/node_modules/", "\\.int-spec\\.ts$"],
+    "testPathIgnorePatterns": ["/node_modules/", "/test/support/", "\\.int-spec\\.ts$"],
     "transform": { "^.+\\.(t|j)s$": "ts-jest" },
     "collectCoverageFrom": ["src/**/*.(t|j)s"]
   }

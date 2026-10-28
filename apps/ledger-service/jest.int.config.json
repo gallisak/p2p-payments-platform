@@ -3,5 +3,6 @@
   "rootDir": ".",
   "testRegex": "\\.int-spec\\.ts$",
   "transform": { "^.+\\.(t|j)s$": "ts-jest" },
-  "testTimeout": 30000
+  "testTimeout": 30000,
+  "globalSetup": "<rootDir>/test/support/global-setup.ts"
 }
