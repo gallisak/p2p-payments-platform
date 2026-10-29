@@ -83,6 +83,29 @@ jobs:
     defaults:
       run:
         working-directory: apps/payments-service
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: payments
+          POSTGRES_PASSWORD: payments
+          POSTGRES_DB: payments
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payments"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,8 +117,36 @@ jobs:
       - run: npm run lint:ci
       - run: npm run typecheck
       - run: npm test
+      - name: Integration tests (Postgres)
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_USER: payments
+          DATABASE_PASSWORD: payments
+          REDIS_URL: redis://localhost:6379
+        run: npm run test:int
       - run: npm run build
       - run: test -f dist/main.js
+      - name: Smoke test (boots against Postgres)
+        env:
+          PORT: 3002
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_USER: payments
+          DATABASE_PASSWORD: payments
+          DATABASE_NAME: payments
+          JWT_ACCESS_SECRET: ci-access
+          INTERNAL_API_KEY: ci-internal
+          LEDGER_SERVICE_URL: http://localhost:3001
+          REDIS_URL: redis://localhost:6379
+        run: |
+          node dist/main > /tmp/payments.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' localhost:3002/transfers) && [ "$code" = 401 ] && exit 0
+            sleep 1
+          done
+          cat /tmp/payments.log
+          exit 1
 
   notifications-service:
     runs-on: ubuntu-latest

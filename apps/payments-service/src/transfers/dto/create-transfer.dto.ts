@@ -1,19 +1,19 @@
-import { IsNumber, IsPositive, IsString, IsUUID } from 'class-validator';
+import { IsEmail, IsIn, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsMoneyAmount } from './is-money-amount.decorator';
+import { Currency, SUPPORTED_CURRENCIES } from '../../common/currencies';
 
-// Каркас DTO вже готовий. За потреби додайте поле під idempotency key
-// (див. ТЗ, розділ про переказ і Idempotency-Key) — воно тут навмисно
-// не заведене.
 export class CreateTransferDto {
   @IsUUID()
   fromWalletId: string;
 
   @IsString()
-  toWalletIdentifier: string; // email або username отримувача
+  @IsEmail()
+  @MaxLength(254)
+  toWalletIdentifier: string; // email отримувача
 
-  @IsNumber()
-  @IsPositive()
+  @IsMoneyAmount()
   amount: number;
 
-  @IsString()
-  currency: string;
+  @IsIn(SUPPORTED_CURRENCIES)
+  currency: Currency;
 }

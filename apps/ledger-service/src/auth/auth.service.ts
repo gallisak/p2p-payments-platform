@@ -13,6 +13,7 @@ import { User } from './entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { requireJwtSecret } from './jwt-secrets';
+import { normalizeEmail } from './email';
 
 interface TokenPair {
   accessToken: string;
@@ -32,19 +33,22 @@ export class AuthService implements OnModuleInit {
   }
 
   async register(dto: RegisterDto): Promise<TokenPair> {
-    const existing = await this.users.findOne({ where: { email: dto.email } });
+    const email = normalizeEmail(dto.email);
+    const existing = await this.users.findOne({ where: { email } });
     if (existing) {
       throw new ConflictException('Email вже зареєстровано');
     }
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.users.save(
-      this.users.create({ email: dto.email, passwordHash }),
+      this.users.create({ email, passwordHash }),
     );
     return this.issueTokens(user);
   }
 
   async login(dto: LoginDto): Promise<TokenPair> {
-    const user = await this.users.findOne({ where: { email: dto.email } });
+    const user = await this.users.findOne({
+      where: { email: normalizeEmail(dto.email) },
+    });
     if (!user) {
       throw new UnauthorizedException('Невірний email або пароль');
     }
@@ -56,7 +60,9 @@ export class AuthService implements OnModuleInit {
   }
 
   async findUserIdByEmail(email: string): Promise<string | null> {
-    const user = await this.users.findOne({ where: { email } });
+    const user = await this.users.findOne({
+      where: { email: normalizeEmail(email) },
+    });
     return user?.id ?? null;
   }
 

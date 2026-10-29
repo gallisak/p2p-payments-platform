@@ -64,8 +64,8 @@ describe('Holds and transfer settlement on Postgres (integration)', () => {
       currency,
     });
 
-  const release = (holdId: string) =>
-    ctx.internal('post', `/holds/${holdId}/release`);
+  const release = (holdId: string, walletId?: string) =>
+    ctx.internal('post', `/holds/${holdId}/release`, walletId ? { walletId } : undefined);
 
   const eventsOf = async (streamId: string) =>
     ctx.dataSource
@@ -132,6 +132,57 @@ describe('Holds and transfer settlement on Postgres (integration)', () => {
       await ctx
         .internal('post', '/recipients', { email: 'a@example.com', currency: 'BTC' })
         .expect(400);
+    });
+  });
+
+  describe('wallet lookup', () => {
+    it('describes a wallet of its owner', async () => {
+      const user = await account('EUR', 5);
+
+      const res = await ctx
+        .internal('get', `/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        walletId: user.walletId,
+        ownerId: user.userId,
+        currency: 'EUR',
+        blocked: false,
+      });
+    });
+
+    it('reports a wallet of another user as not found', async () => {
+      const owner = await account('USD');
+      const other = await account('USD');
+      await ctx
+        .internal('get', `/wallets/${owner.walletId}?ownerId=${other.userId}`)
+        .expect(404);
+    });
+
+    it('shows that a wallet is blocked', async () => {
+      const user = await account('USD');
+      const admin = await ctx.adminToken();
+      await ctx
+        .http()
+        .post(`/admin/wallets/${user.walletId}/block`)
+        .set('Authorization', `Bearer ${admin}`)
+        .send({ reason: 'fraud check' })
+        .expect(201);
+
+      const res = await ctx
+        .internal('get', `/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(200);
+      expect(res.body.blocked).toBe(true);
+    });
+
+    it('validates the lookup', async () => {
+      const user = await account('USD');
+      await ctx.internal('get', `/wallets/${user.walletId}`).expect(400);
+      await ctx.internal('get', `/wallets/not-a-uuid?ownerId=${user.userId}`).expect(400);
+      await ctx
+        .http()
+        .get(`/internal/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(401);
     });
   });
 
@@ -303,6 +354,66 @@ describe('Holds and transfer settlement on Postgres (integration)', () => {
       await release(hold.body.id).expect(409);
 
       expect(await wallet(to.walletId)).toMatchObject({ balance: '40.00' });
+    });
+
+    it('voids a hold id that was never placed so that a late placement cannot reserve funds', async () => {
+      const from = await account('USD', 100);
+      const to = await account('USD');
+      const holdId = randomUUID();
+      const before = (await eventsOf(from.walletId)).length;
+
+      const voided = await release(holdId, from.walletId).expect(201);
+      await release(holdId, from.walletId).expect(201);
+
+      expect(voided.body).toMatchObject({ id: holdId, status: 'voided', amount: '0.00' });
+      await place(from, 40, holdId).expect(409);
+      await capture(holdId, to, 40).expect(409);
+      expect(await wallet(from.walletId)).toMatchObject({ balance: '100.00', held: '0.00' });
+      expect(await eventsOf(from.walletId)).toHaveLength(before);
+    });
+
+    it('releases a placed hold when the release names its wallet', async () => {
+      const from = await account('USD', 100);
+      const hold = await place(from, 40).expect(201);
+
+      const res = await release(hold.body.id, from.walletId).expect(201);
+
+      expect(res.body.status).toBe('released');
+      expect((await wallet(from.walletId)).held).toBe('0.00');
+    });
+
+    it('refuses a release that names another wallet of the hold', async () => {
+      const from = await account('USD', 100);
+      const other = await account('USD');
+      const hold = await place(from, 40).expect(201);
+
+      await release(hold.body.id, other.walletId).expect(400);
+      await release(randomUUID(), randomUUID()).expect(404);
+      await ctx.internal('post', `/holds/${randomUUID()}/release`, { walletId: 'nope' }).expect(400);
+
+      expect((await wallet(from.walletId)).held).toBe('40.00');
+    });
+
+    it('lets exactly one of a concurrent placement and void of the same hold id win', async () => {
+      for (let i = 0; i < 5; i++) {
+        const from = await account('USD', 100);
+        const holdId = randomUUID();
+
+        const [placed, voided] = await Promise.all([
+          place(from, 40, holdId),
+          release(holdId, from.walletId),
+        ]);
+
+        expect(voided.status).toBe(201);
+        const held = (await wallet(from.walletId)).held;
+        if (placed.status === 201) {
+          expect(voided.body.status).toBe('released');
+        } else {
+          expect(placed.status).toBe(409);
+          expect(voided.body.status).toBe('voided');
+        }
+        expect(held).toBe('0.00');
+      }
     });
   });
 

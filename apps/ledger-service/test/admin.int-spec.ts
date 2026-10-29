@@ -114,6 +114,18 @@ describe('Admin API on Postgres (integration)', () => {
       ).toBe(1);
     });
 
+    it('treats ADMIN_EMAIL written in another letter case as the same admin', async () => {
+      const original = process.env.ADMIN_EMAIL as string;
+      process.env.ADMIN_EMAIL = `  ${original.toUpperCase()} `;
+      try {
+        await new AdminSeeder(ctx.dataSource.getRepository(User)).onApplicationBootstrap();
+      } finally {
+        process.env.ADMIN_EMAIL = original;
+      }
+
+      expect(await ctx.dataSource.getRepository(User).countBy({ role: 'admin' })).toBe(1);
+    });
+
     it('refuses to turn an existing regular user into the admin', async () => {
       const user = await ctx.registerUser();
       const { email } = await ctx.dataSource

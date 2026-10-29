@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type HoldStatus = 'placed' | 'released' | 'captured';
+export type HoldStatus = 'placed' | 'released' | 'captured' | 'voided';
 
 @Entity('holds')
 export class Hold {

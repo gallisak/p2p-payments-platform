@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { EmailNormalizationModule } from './auth/email-normalization.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { InternalModule } from './internal/internal.module';
 import { AdminModule } from './admin/admin.module';
@@ -26,6 +27,7 @@ import { OutboxMessage } from './outbox/outbox-message.entity';
       synchronize: true, // OK для стартового репо; у бойовому коді — міграції
     }),
     AuthModule,
+    EmailNormalizationModule,
     WalletsModule,
     InternalModule,
     AdminModule,
