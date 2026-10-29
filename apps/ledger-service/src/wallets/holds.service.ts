@@ -81,18 +81,47 @@ export class HoldsService {
     }
   }
 
-  async release(holdId: string): Promise<Hold> {
-    const { walletId } = await this.find(holdId);
+  async release(holdId: string, walletId?: string): Promise<Hold> {
+    const known = await this.holds.findOne({ where: { id: holdId } });
+    const target = known?.walletId ?? walletId;
+    if (!target) {
+      throw new NotFoundException('Холд не знайдено');
+    }
+    if (walletId && target !== walletId) {
+      throw new BadRequestException('Холд належить іншому гаманцю');
+    }
     return this.dataSource.transaction(async (manager) => {
-      const wallets = await this.ledger.lockAll(manager, [walletId]);
-      const hold = await this.lockHold(manager, holdId);
-      if (hold.status === 'released') {
+      const wallets = await this.ledger.lockAll(manager, [target]);
+      const wallet = this.required(wallets, target);
+      const hold = await manager.findOne(Hold, {
+        where: { id: holdId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!hold) {
+        return manager.save(
+          manager.create(Hold, {
+            id: holdId,
+            walletId: wallet.id,
+            amount: '0.00',
+            currency: wallet.currency,
+            status: 'voided',
+            toWalletId: null,
+            creditAmount: null,
+            creditCurrency: null,
+            operationId: null,
+          }),
+        );
+      }
+      if (hold.walletId !== target) {
+        throw new BadRequestException('Холд належить іншому гаманцю');
+      }
+      if (hold.status === 'released' || hold.status === 'voided') {
         return hold;
       }
       if (hold.status === 'captured') {
         throw new ConflictException('Холд уже списано');
       }
-      await this.ledger.record(manager, this.required(wallets, walletId), 'HoldReleased', {
+      await this.ledger.record(manager, wallet, 'HoldReleased', {
         holdId,
         amount: hold.amount,
         currency: hold.currency,
@@ -121,7 +150,7 @@ export class HoldsService {
         }
         throw new ConflictException('Холд уже списано з іншими параметрами');
       }
-      if (hold.status === 'released') {
+      if (hold.status === 'released' || hold.status === 'voided') {
         throw new ConflictException('Холд уже знято');
       }
       const recipient = wallets.get(input.toWalletId);
@@ -209,6 +238,9 @@ export class HoldsService {
   }
 
   private samePlacement(hold: Hold, walletId: string, cents: bigint): Hold {
+    if (hold.status === 'voided') {
+      throw new ConflictException('Холд уже скасовано');
+    }
     if (hold.walletId !== walletId || toCents(hold.amount) !== cents) {
       throw new ConflictException('Холд з таким id уже існує з іншими параметрами');
     }

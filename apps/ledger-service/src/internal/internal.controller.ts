@@ -14,6 +14,7 @@ import { PlaceHoldDto } from './dto/place-hold.dto';
 import { CaptureHoldDto } from './dto/capture-hold.dto';
 import { ResolveRecipientDto } from './dto/resolve-recipient.dto';
 import { WalletOwnerQueryDto } from './dto/wallet-owner-query.dto';
+import { ReleaseHoldDto } from './dto/release-hold.dto';
 import { HoldsService } from '../wallets/holds.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { AuthService } from '../auth/auth.service';
@@ -62,8 +63,11 @@ export class InternalController {
   }
 
   @Post('holds/:holdId/release')
-  release(@Param('holdId', ParseUUIDPipe) holdId: string) {
-    return this.holds.release(holdId);
+  release(
+    @Param('holdId', ParseUUIDPipe) holdId: string,
+    @Body() dto: ReleaseHoldDto,
+  ) {
+    return this.holds.release(holdId, dto.walletId);
   }
 
   @Post('holds/:holdId/capture')
