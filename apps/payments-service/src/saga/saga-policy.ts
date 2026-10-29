@@ -7,6 +7,7 @@ export interface SagaRuntimeOptions {
   leaseMs: number;
   pollMs: number;
   batchSize: number;
+  concurrency: number;
 }
 
 export function sagaPolicyFromEnv(): SagaPolicy {
@@ -31,6 +32,7 @@ export function sagaRuntimeFromEnv(): SagaRuntimeOptions {
     leaseMs: numberEnv('SAGA_LEASE_MS', 30_000),
     pollMs: numberEnv('SAGA_POLL_MS', 200),
     batchSize: Math.max(1, numberEnv('SAGA_BATCH_SIZE', 10)),
+    concurrency: Math.max(1, numberEnv('SAGA_CONCURRENCY', 20)),
   };
   const ledgerTimeoutMs = numberEnv('LEDGER_TIMEOUT_MS', 3_000);
   if (options.leaseMs < ledgerTimeoutMs * 4) {

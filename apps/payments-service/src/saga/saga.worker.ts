@@ -23,6 +23,7 @@ export class SagaWorker implements OnApplicationBootstrap, OnModuleDestroy {
   private loop?: Promise<void>;
   private wake?: () => void;
   private kicked = false;
+  private readonly inFlight = new Set<Promise<void>>();
 
   constructor(
     private readonly store: SagaStore,
@@ -102,20 +103,40 @@ export class SagaWorker implements OnApplicationBootstrap, OnModuleDestroy {
     let backoff = this.runtime.pollMs;
     while (this.running) {
       this.kicked = false;
-      try {
-        const processed = await this.runOnce();
-        backoff = this.runtime.pollMs;
-        if (processed > 0) {
-          continue;
+      const free = this.runtime.concurrency - this.inFlight.size;
+      if (free > 0) {
+        try {
+          const due = await this.store.claimDue(
+            new Date(),
+            Math.min(free, this.runtime.batchSize),
+            this.runtime.leaseMs,
+          );
+          backoff = this.runtime.pollMs;
+          due.forEach((transfer) => this.track(this.advance(transfer)));
+          if (due.length > 0) {
+            continue;
+          }
+        } catch (err) {
+          this.logger.warn(`Saga worker failed, retrying in ${backoff} ms: ${(err as Error).message}`);
+          backoff = Math.min(backoff * 2, MAX_IDLE_BACKOFF_MS);
         }
-      } catch (err) {
-        this.logger.warn(`Saga worker failed, retrying in ${backoff} ms: ${(err as Error).message}`);
-        backoff = Math.min(backoff * 2, MAX_IDLE_BACKOFF_MS);
       }
       if (!this.kicked) {
-        await this.sleep(backoff);
+        await this.sleep(free > 0 ? backoff : this.runtime.pollMs);
       }
     }
+    await Promise.all(this.inFlight);
+  }
+
+  private track(work: Promise<void>): void {
+    const settled = work.catch((err: Error) => {
+      this.logger.error(`Saga step crashed: ${err.message}`);
+    });
+    this.inFlight.add(settled);
+    void settled.finally(() => {
+      this.inFlight.delete(settled);
+      this.kick();
+    });
   }
 
   private sleep(ms: number): Promise<void> {
