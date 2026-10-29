@@ -135,6 +135,57 @@ describe('Holds and transfer settlement on Postgres (integration)', () => {
     });
   });
 
+  describe('wallet lookup', () => {
+    it('describes a wallet of its owner', async () => {
+      const user = await account('EUR', 5);
+
+      const res = await ctx
+        .internal('get', `/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        walletId: user.walletId,
+        ownerId: user.userId,
+        currency: 'EUR',
+        blocked: false,
+      });
+    });
+
+    it('reports a wallet of another user as not found', async () => {
+      const owner = await account('USD');
+      const other = await account('USD');
+      await ctx
+        .internal('get', `/wallets/${owner.walletId}?ownerId=${other.userId}`)
+        .expect(404);
+    });
+
+    it('shows that a wallet is blocked', async () => {
+      const user = await account('USD');
+      const admin = await ctx.adminToken();
+      await ctx
+        .http()
+        .post(`/admin/wallets/${user.walletId}/block`)
+        .set('Authorization', `Bearer ${admin}`)
+        .send({ reason: 'fraud check' })
+        .expect(201);
+
+      const res = await ctx
+        .internal('get', `/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(200);
+      expect(res.body.blocked).toBe(true);
+    });
+
+    it('validates the lookup', async () => {
+      const user = await account('USD');
+      await ctx.internal('get', `/wallets/${user.walletId}`).expect(400);
+      await ctx.internal('get', `/wallets/not-a-uuid?ownerId=${user.userId}`).expect(400);
+      await ctx
+        .http()
+        .get(`/internal/wallets/${user.walletId}?ownerId=${user.userId}`)
+        .expect(401);
+    });
+  });
+
   describe('placing holds', () => {
     it('reserves funds without changing the balance', async () => {
       const from = await account('USD', 100);

@@ -1,16 +1,19 @@
 import {
   Body,
   Controller,
+  Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { InternalApiKeyGuard } from './internal-api-key.guard';
 import { PlaceHoldDto } from './dto/place-hold.dto';
 import { CaptureHoldDto } from './dto/capture-hold.dto';
 import { ResolveRecipientDto } from './dto/resolve-recipient.dto';
+import { WalletOwnerQueryDto } from './dto/wallet-owner-query.dto';
 import { HoldsService } from '../wallets/holds.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { AuthService } from '../auth/auth.service';
@@ -31,6 +34,20 @@ export class InternalController {
       throw new NotFoundException('Отримувача не знайдено');
     }
     const wallet = await this.wallets.open(userId, dto.currency);
+    return {
+      walletId: wallet.id,
+      ownerId: wallet.ownerId,
+      currency: wallet.currency,
+      blocked: wallet.blocked,
+    };
+  }
+
+  @Get('wallets/:walletId')
+  async wallet(
+    @Param('walletId', ParseUUIDPipe) walletId: string,
+    @Query() query: WalletOwnerQueryDto,
+  ) {
+    const wallet = await this.wallets.getById(walletId, query.ownerId);
     return {
       walletId: wallet.id,
       ownerId: wallet.ownerId,
