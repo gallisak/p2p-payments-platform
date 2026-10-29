@@ -15,6 +15,7 @@ import { formatCents, toCents } from '../common/money';
 import { isUniqueViolation } from '../common/db-errors';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import { SagaWorker } from '../saga/saga.worker';
+import { SplitBillsStore } from '../split-bills/split-bills.store';
 
 const MAX_STEPS_IN_VIEW = 100;
 
@@ -31,12 +32,14 @@ export class TransfersService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly outbox: OutboxWriter,
     private readonly worker: SagaWorker,
+    private readonly splitBills: SplitBillsStore,
   ) {}
 
   async create(
     senderId: string,
     idempotencyKey: string,
     dto: CreateTransferDto,
+    splitShare?: { billId: string; shareId: string },
   ): Promise<CreatedTransfer> {
     const amount = formatCents(toCents(dto.amount));
     const recipientEmail = dto.toWalletIdentifier.trim().toLowerCase();
@@ -45,6 +48,7 @@ export class TransfersService {
       toWalletIdentifier: recipientEmail,
       amount,
       currency: dto.currency,
+      ...(splitShare ? { splitShareId: splitShare.shareId } : {}),
     });
     const existing = await this.transfers.findOne({ where: { senderId, idempotencyKey } });
     if (existing) {
@@ -80,8 +84,12 @@ export class TransfersService {
             deadlineAt: new Date(now.getTime() + this.worker.timeoutMs),
             version: 1,
             completedAt: null,
+            splitShareId: splitShare?.shareId ?? null,
           }),
         );
+        if (splitShare) {
+          await this.splitBills.linkPayment(manager, splitShare, senderId, transfer.id);
+        }
         await this.outbox.enqueue(manager, 'TransferInitiated', transfer);
         return transfer;
       });
@@ -94,6 +102,10 @@ export class TransfersService {
       const winner = await this.transfers.findOneByOrFail({ senderId, idempotencyKey });
       return this.replay(winner, hash);
     }
+  }
+
+  async exists(senderId: string, idempotencyKey: string): Promise<boolean> {
+    return this.transfers.exists({ where: { senderId, idempotencyKey } });
   }
 
   async get(senderId: string, id: string) {

@@ -95,4 +95,8 @@ export class Transfer {
 
   @Column('timestamptz', { nullable: true })
   completedAt: Date | null;
+
+  @Index('IDX_transfers_split_share')
+  @Column('uuid', { nullable: true })
+  splitShareId: string | null;
 }

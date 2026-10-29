@@ -12,11 +12,17 @@ import { SplitBill } from './entities/split-bill.entity';
 import { SplitShare } from './entities/split-share.entity';
 import { AllocationError, allocateCustom, allocateEqually } from './allocation';
 import { CreateSplitBillDto } from './dto/create-split-bill.dto';
+import { PayShareDto } from './dto/pay-share.dto';
 import { billView } from './split-bill-view';
 import { SplitBillsStore } from './split-bills.store';
 import { formatCents, toCents } from '../common/money';
+import { Currency } from '../common/currencies';
 import { LEDGER_CLIENT, LedgerPort } from '../ledger/ledger.client';
 import { LedgerRejectedError, LedgerUnavailableError } from '../ledger/ledger.errors';
+import { TransfersService } from '../transfers/transfers.service';
+import { FxService } from '../fx/fx.service';
+import { convertCents, parseMicro } from '../fx/fx';
+import { sagaPolicyFromEnv } from '../saga/saga-policy';
 import { AuthUser } from '../auth/jwt.strategy';
 
 const MAX_DUE_MS = 365 * 24 * 3_600_000;
@@ -28,7 +34,11 @@ export class SplitBillsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(LEDGER_CLIENT) private readonly ledger: LedgerPort,
     private readonly store: SplitBillsStore,
+    private readonly transfers: TransfersService,
+    private readonly fx: FxService,
   ) {}
+
+  private readonly maxTransferUsdCents = sagaPolicyFromEnv().maxTransferUsdCents;
 
   async create(user: AuthUser, dto: CreateSplitBillDto) {
     const creatorEmail = user.email.trim().toLowerCase();
@@ -65,6 +75,10 @@ export class SplitBillsService {
         throw new BadRequestException(err.message);
       }
       throw err;
+    }
+    const usd = await this.fx.quote(dto.currency, 'USD');
+    if (allocation.shares.some((cents) => convertCents(cents, parseMicro(usd.rate)) > this.maxTransferUsdCents)) {
+      throw new BadRequestException('Частка перевищує ліміт на один переказ, тож її неможливо буде оплатити');
     }
     const participants = await Promise.all(emails.map((email) => this.resolveParticipant(email, dto.currency)));
     if (participants.some((p) => p.ownerId === user.userId)) {
@@ -141,6 +155,28 @@ export class SplitBillsService {
   async get(userId: string, billId: string) {
     const { bill, shares } = await this.visible(userId, billId);
     return billView(bill, shares);
+  }
+
+  async payShare(user: AuthUser, billId: string, shareId: string, key: string, dto: PayShareDto) {
+    const { bill, shares } = await this.visible(user.userId, billId);
+    const share = shares.find((s) => s.id === shareId);
+    if (!share || share.participantId !== user.userId) {
+      throw new NotFoundException('Частку не знайдено');
+    }
+    const payment = {
+      fromWalletId: dto.fromWalletId,
+      toWalletIdentifier: bill.creatorEmail,
+      amount: Number(share.amount),
+      currency: bill.currency as Currency,
+    };
+    if (await this.transfers.exists(user.userId, key)) {
+      return this.transfers.create(user.userId, key, payment, { billId, shareId });
+    }
+    const wallet = await this.ledgerCall(() => this.ledger.getWallet(dto.fromWalletId, user.userId), 'Гаманець не знайдено');
+    if (wallet.currency !== bill.currency) {
+      throw new BadRequestException(`Частку можна оплатити лише з гаманця в ${bill.currency}`);
+    }
+    return this.transfers.create(user.userId, key, payment, { billId, shareId });
   }
 
   private async visible(userId: string, billId: string) {

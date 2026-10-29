@@ -35,6 +35,6 @@ import { SplitBillsStore } from '../split-bills/split-bills.store';
     SplitBillsStore,
     { provide: LEDGER_CLIENT, useClass: LedgerClient },
   ],
-  exports: [TransfersService, SplitBillsStore, LEDGER_CLIENT, ThrottlerModule],
+  exports: [TransfersService, SplitBillsStore, FxService, LEDGER_CLIENT, ThrottlerModule],
 })
 export class TransfersModule {}

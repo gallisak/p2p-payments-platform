@@ -5,6 +5,7 @@ import { Transfer } from '../transfers/entities/transfer.entity';
 import { SagaStep, StepOutcome } from '../transfers/entities/saga-step.entity';
 import { OutboxWriter, eventTypeFor } from '../outbox/outbox.writer';
 import { SagaStepName, Transition } from './transfer-saga';
+import { SplitBillsStore } from '../split-bills/split-bills.store';
 
 export interface StepTiming {
   step: SagaStepName;
@@ -17,6 +18,7 @@ export class SagaStore {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly outbox: OutboxWriter,
+    private readonly splitBills: SplitBillsStore,
   ) {}
 
   async claimDue(now: Date, limit: number, leaseMs: number): Promise<Transfer[]> {
@@ -70,6 +72,7 @@ export class SagaStore {
       if (emit) {
         await this.outbox.enqueue(manager, eventTypeFor(updated), updated);
       }
+      await this.splitBills.onTransferSettled(manager, updated);
       return updated;
     });
   }
