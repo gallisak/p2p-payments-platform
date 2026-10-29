@@ -1,0 +1,38 @@
+{
+  "name": "e2e",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint:ci": "eslint \"{src,test,load}/**/*.ts\" --max-warnings 0",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "jest --runInBand",
+    "load": "ts-node load/double-spend.ts"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": ".",
+    "testRegex": "\\.e2e-spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "testTimeout": 60000
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.23.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0",
+    "pg": "^8.23.1",
+    "socket.io-client": "^4.8.4",
+    "ts-jest": "^29.4.15",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
