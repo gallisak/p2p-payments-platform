@@ -11,6 +11,9 @@ import { TransfersModule } from '../../src/transfers/transfers.module';
 import { Transfer } from '../../src/transfers/entities/transfer.entity';
 import { SagaStep } from '../../src/transfers/entities/saga-step.entity';
 import { OutboxMessage } from '../../src/outbox/outbox-message.entity';
+import { SplitBill } from '../../src/split-bills/entities/split-bill.entity';
+import { SplitShare } from '../../src/split-bills/entities/split-share.entity';
+import { SplitBillsModule } from '../../src/split-bills/split-bills.module';
 import { EventEnvelope } from '../../src/outbox/event-envelope';
 import { SagaWorker } from '../../src/saga/saga.worker';
 import { FakeLedger } from './fake-ledger';
@@ -49,6 +52,7 @@ const DEFAULT_ENV: Record<string, string> = {
   TRANSFER_DAILY_LIMIT_USD: '50000',
   TRANSFER_BLOCKED_RECIPIENTS: 'banned@example.com',
   FX_QUOTE_TTL_MS: '60000',
+  SPLIT_REMINDERS_ENABLED: 'false',
 };
 
 export interface Account {
@@ -91,12 +95,13 @@ export async function createPaymentsApp(env: Record<string, string> = {}): Promi
       TypeOrmModule.forRoot({
         type: 'postgres',
         ...testDatabase,
-        entities: [Transfer, SagaStep, OutboxMessage],
+        entities: [Transfer, SagaStep, OutboxMessage, SplitBill, SplitShare],
         synchronize: true,
         dropSchema: true,
       }),
       AuthModule,
       TransfersModule,
+      SplitBillsModule,
     ],
   }).compile();
   const app = moduleRef.createNestApplication();

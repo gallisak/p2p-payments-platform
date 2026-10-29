@@ -5,3 +5,4 @@ services:
   payments-service:
     environment:
       TRANSFER_RATE_LIMIT_MAX: '100000'
+      SPLIT_REMINDER_POLL_MS: '500'
