@@ -1,21 +1,57 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { Response } from 'express';
 import { TransfersService } from './transfers.service';
 import { CreateTransferDto } from './dto/create-transfer.dto';
+import { ListTransfersDto } from './dto/list-transfers.dto';
+import { requireIdempotencyKey } from './idempotency';
+import { TransfersThrottlerGuard } from './transfers-throttler.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthUser } from '../auth/jwt.strategy';
+
+interface AuthedRequest {
+  user: AuthUser;
+}
 
 @Controller('transfers')
+@UseGuards(JwtAuthGuard)
 export class TransfersController {
   constructor(private readonly transfers: TransfersService) {}
 
-  // TODO: бізнес-логіка саги переказу ще не реалізована.
-  // Каркас контролера й DTO є — реалізуйте кроки саги, компенсацію
-  // й ідемпотентність у TransfersService (див. ТЗ, розділ 4.2).
   @Post()
-  create(@Body() dto: CreateTransferDto) {
-    return this.transfers.create(dto);
+  @UseGuards(TransfersThrottlerGuard)
+  async create(
+    @Req() req: AuthedRequest,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: CreateTransferDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const key = requireIdempotencyKey(idempotencyKey);
+    const { transfer, replayed } = await this.transfers.create(req.user.userId, key, dto);
+    res.status(replayed ? HttpStatus.OK : HttpStatus.ACCEPTED);
+    res.setHeader('Idempotent-Replayed', String(replayed));
+    return transfer;
+  }
+
+  @Get()
+  list(@Req() req: AuthedRequest, @Query() query: ListTransfersDto) {
+    return this.transfers.list(req.user.userId, query.limit);
   }
 
   @Get(':id')
-  getStatus(@Param('id') id: string) {
-    return this.transfers.getStatus(id);
+  getStatus(@Req() req: AuthedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.transfers.get(req.user.userId, id);
   }
 }

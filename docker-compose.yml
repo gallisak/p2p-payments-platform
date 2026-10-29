@@ -17,6 +17,22 @@ services:
       timeout: 5s
       retries: 30
 
+  payments-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+      POSTGRES_DB: payments
+    ports:
+      - '5434:5432'
+    volumes:
+      - payments-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U payments -d payments']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   redis:
     image: redis:7-alpine
     command: ['redis-server', '--appendonly', 'yes']
@@ -47,7 +63,12 @@ services:
     build: ./apps/payments-service
     env_file: ./apps/payments-service/.env.example
     depends_on:
-      - ledger-service
+      payments-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ledger-service:
+        condition: service_started
     ports:
       - '3002:3002'
 
@@ -71,4 +92,5 @@ services:
 
 volumes:
   ledger-db-data:
+  payments-db-data:
   redis-data:
