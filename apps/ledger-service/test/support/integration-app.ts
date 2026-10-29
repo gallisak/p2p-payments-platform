@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import Redis from 'ioredis';
 import request from 'supertest';
 import { AuthModule } from '../../src/auth/auth.module';
+import { EmailNormalizationModule } from '../../src/auth/email-normalization.module';
 import { WalletsModule } from '../../src/wallets/wallets.module';
 import { InternalModule } from '../../src/internal/internal.module';
 import { AdminModule } from '../../src/admin/admin.module';
@@ -81,6 +82,7 @@ export async function createIntegrationApp(
         dropSchema: true,
       }),
       AuthModule,
+      EmailNormalizationModule,
       WalletsModule,
       InternalModule,
       AdminModule,

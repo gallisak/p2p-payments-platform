@@ -5,20 +5,22 @@ import * as bcrypt from 'bcrypt';
 import { isEmail } from 'class-validator';
 import { User } from './entities/user.entity';
 import { isUniqueViolation } from '../common/db-errors';
+import { normalizeEmail } from './email';
 
 @Injectable()
 export class AdminSeeder implements OnApplicationBootstrap {
   constructor(@InjectRepository(User) private readonly users: Repository<User>) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    const email = process.env.ADMIN_EMAIL;
+    const rawEmail = process.env.ADMIN_EMAIL;
     const password = process.env.ADMIN_PASSWORD;
-    if (!email && !password) {
+    if (!rawEmail && !password) {
       return;
     }
-    if (!email || !password) {
+    if (!rawEmail || !password) {
       throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD must be set together');
     }
+    const email = normalizeEmail(rawEmail);
     if (!isEmail(email)) {
       throw new Error(`ADMIN_EMAIL "${email}" is not a valid email address`);
     }
