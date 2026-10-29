@@ -33,6 +33,22 @@ services:
       timeout: 5s
       retries: 30
 
+  notifications-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: notifications
+      POSTGRES_PASSWORD: notifications
+      POSTGRES_DB: notifications
+    ports:
+      - '5435:5432'
+    volumes:
+      - notifications-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U notifications -d notifications']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   redis:
     image: redis:7-alpine
     command: ['redis-server', '--appendonly', 'yes']
@@ -75,6 +91,9 @@ services:
   notifications-service:
     build: ./apps/notifications-service
     env_file: ./apps/notifications-service/.env.example
+    depends_on:
+      notifications-db:
+        condition: service_healthy
     ports:
       - '3003:3003'
 
@@ -93,4 +112,5 @@ services:
 volumes:
   ledger-db-data:
   payments-db-data:
+  notifications-db-data:
   redis-data:
