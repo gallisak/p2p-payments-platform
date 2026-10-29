@@ -230,6 +230,95 @@ describe('Saga resilience (integration)', () => {
     });
   });
 
+  describe('worker concurrency', () => {
+    let ctx: PaymentsApp;
+
+    beforeAll(async () => {
+      ctx = await createPaymentsApp({ SAGA_CONCURRENCY: '4', LEDGER_TIMEOUT_MS: '3000', SAGA_LEASE_MS: '15000' });
+    });
+
+    afterEach(() => ctx.ledger.reset());
+    afterAll(() => ctx.close());
+
+    it('keeps other sagas moving while one waits on a slow ledger call', async () => {
+      const slow = await ctx.account('USD', '100');
+      const fast = await ctx.account('USD', '100');
+      const to = await ctx.account('USD');
+      let release: () => void = () => undefined;
+      const slowHold = new Promise<void>((resolve) => (release = resolve));
+      ctx.ledger.intercept(async (call) => {
+        if (call.op === 'place' && call.body.walletId === slow.walletId) await slowHold;
+      });
+
+      const a = await ctx.transfer(slow, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202);
+      await ctx.waitFor(slow.token, a.body.id, (t) => t.status === 'checked');
+      const b = await ctx.transfer(fast, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202);
+
+      expect(await ctx.settle(fast.token, b.body.id, 2_000)).toMatchObject({ status: 'completed' });
+      expect((await ctx.http().get(`/transfers/${a.body.id}`).set('Authorization', `Bearer ${slow.token}`)).body.status).toBe('checked');
+      release();
+      expect(await ctx.settle(slow.token, a.body.id)).toMatchObject({ status: 'completed' });
+    });
+
+    it('never runs more sagas at once than allowed', async () => {
+      const to = await ctx.account('USD');
+      const senders = await Promise.all(Array.from({ length: 8 }, () => ctx.account('USD', '10')));
+      let concurrent = 0;
+      let peak = 0;
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      ctx.ledger.intercept(async (call) => {
+        if (call.op !== 'place') return;
+        concurrent += 1;
+        peak = Math.max(peak, concurrent);
+        await gate;
+        concurrent -= 1;
+      });
+
+      const created = await Promise.all(
+        senders.map((s) => ctx.transfer(s, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202)),
+      );
+      await sleep(600);
+      expect(peak).toBe(4);
+      release();
+      const done = await Promise.all(created.map((r, i) => ctx.settle(senders[i].token, r.body.id)));
+
+      expect(done.map((t) => t.status)).toEqual(Array(8).fill('completed'));
+      expect(peak).toBe(4);
+    });
+  });
+
+  describe('saga ordering', () => {
+    let ctx: PaymentsApp;
+
+    beforeAll(async () => {
+      ctx = await createPaymentsApp({ SAGA_CONCURRENCY: '1', SAGA_BATCH_SIZE: '1' });
+    });
+
+    afterAll(() => ctx.close());
+
+    it('finishes older transfers first instead of advancing every saga one step at a time', async () => {
+      await ctx.worker.onModuleDestroy();
+      const to = await ctx.account('USD');
+      const senders = await Promise.all(Array.from({ length: 5 }, () => ctx.account('USD', '10')));
+      const created = [];
+      for (const s of senders) {
+        created.push(await ctx.transfer(s, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202));
+      }
+
+      ctx.worker.onApplicationBootstrap();
+      const done = await Promise.all(created.map((r, i) => ctx.settle(senders[i].token, r.body.id)));
+
+      const finished = done.map((t) => Date.parse(t.completedAt as string));
+      expect(finished).toEqual([...finished].sort((a, b) => a - b));
+      const firstDone = finished[0];
+      const lastStarted = Math.max(
+        ...done.map((t) => Date.parse((t.steps as { step: string; startedAt: string }[]).find((s) => s.step === 'check')!.startedAt)),
+      );
+      expect(firstDone).toBeLessThan(lastStarted);
+    });
+  });
+
   describe('stale exchange rates', () => {
     let ctx: PaymentsApp;
 

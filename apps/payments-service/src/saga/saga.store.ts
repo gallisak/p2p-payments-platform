@@ -24,7 +24,7 @@ export class SagaStore {
       const rows: { id: string }[] = await manager.query(
         `SELECT id FROM transfers
           WHERE status NOT IN ('completed', 'failed') AND "nextAttemptAt" <= $1
-          ORDER BY "nextAttemptAt"
+          ORDER BY "createdAt", id
           LIMIT $2
           FOR UPDATE SKIP LOCKED`,
         [now, limit],
