@@ -4,6 +4,9 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActivityController } from './activity/activity.controller';
 import { JwtStrategy } from './auth/jwt.strategy';
+import { EventsConsumer } from './consumer/events.consumer';
+import { CONSUMER_REDIS, createConsumerRedis } from './consumer/redis.provider';
+import { requireEnv } from './common/env';
 import { NotificationsGateway } from './gateway/notifications.gateway';
 import { HealthController } from './health.controller';
 import { Activity } from './store/entities/activity.entity';
@@ -21,6 +24,12 @@ export const NOTIFICATIONS_ENTITIES = [ProcessedEvent, WalletSnapshot, TransferS
     JwtModule.register({}),
   ],
   controllers: [HealthController, ActivityController],
-  providers: [JwtStrategy, NotificationsStore, NotificationsGateway],
+  providers: [
+    JwtStrategy,
+    NotificationsStore,
+    NotificationsGateway,
+    EventsConsumer,
+    { provide: CONSUMER_REDIS, useFactory: () => createConsumerRedis(requireEnv('REDIS_URL')) },
+  ],
 })
 export class NotificationsModule {}
