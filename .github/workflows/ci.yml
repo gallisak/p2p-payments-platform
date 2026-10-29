@@ -153,6 +153,29 @@ jobs:
     defaults:
       run:
         working-directory: apps/notifications-service
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: notifications
+          POSTGRES_PASSWORD: notifications
+          POSTGRES_DB: notifications
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U notifications"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -164,8 +187,34 @@ jobs:
       - run: npm run lint:ci
       - run: npm run typecheck
       - run: npm test
+      - name: Integration tests (Postgres + Redis)
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_USER: notifications
+          DATABASE_PASSWORD: notifications
+          REDIS_URL: redis://localhost:6379
+        run: npm run test:int
       - run: npm run build
       - run: test -f dist/main.js
+      - name: Smoke test (boots against Postgres and Redis)
+        env:
+          PORT: 3003
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_USER: notifications
+          DATABASE_PASSWORD: notifications
+          DATABASE_NAME: notifications
+          JWT_ACCESS_SECRET: ci-access
+          REDIS_URL: redis://localhost:6379
+        run: |
+          node dist/main > /tmp/notifications.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' localhost:3003/activity) && [ "$code" = 401 ] && exit 0
+            sleep 1
+          done
+          cat /tmp/notifications.log
+          exit 1
 
   frontend:
     runs-on: ubuntu-latest

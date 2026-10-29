@@ -10,7 +10,8 @@
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "lint:ci": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit -p .",
-    "test": "jest"
+    "test": "jest",
+    "test:int": "jest --config jest.int.config.json --runInBand"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
