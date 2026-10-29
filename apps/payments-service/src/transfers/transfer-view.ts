@@ -20,6 +20,7 @@ export function transferView(t: Transfer) {
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
     completedAt: t.completedAt?.toISOString() ?? null,
+    splitShareId: t.splitShareId,
   };
 }
 

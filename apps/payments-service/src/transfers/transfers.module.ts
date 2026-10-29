@@ -11,6 +11,7 @@ import { LEDGER_CLIENT, LedgerClient } from '../ledger/ledger.client';
 import { FxService } from '../fx/fx.service';
 import { OutboxModule } from '../outbox/outbox.module';
 import { numberEnv } from '../common/env';
+import { SplitBillsStore } from '../split-bills/split-bills.store';
 
 @Module({
   imports: [
@@ -31,7 +32,9 @@ import { numberEnv } from '../common/env';
     SagaStore,
     SagaWorker,
     FxService,
+    SplitBillsStore,
     { provide: LEDGER_CLIENT, useClass: LedgerClient },
   ],
+  exports: [TransfersService, SplitBillsStore, FxService, LEDGER_CLIENT, ThrottlerModule],
 })
 export class TransfersModule {}

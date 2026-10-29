@@ -115,8 +115,11 @@ function ledgerEffects(e: Envelope): Effects {
 }
 
 function paymentsEffects(e: Envelope): Effects {
+  if (e.type.startsWith('Split')) {
+    return { wallet: null, transfer: null, activities: splitActivities(e) };
+  }
   const p = e.payload;
-  if (typeof p.status !== 'string') {
+  if (!e.type.startsWith('Transfer') || typeof p.status !== 'string') {
     return { wallet: null, transfer: null, activities: [] };
   }
   const transfer: TransferUpdate = {
@@ -146,4 +149,84 @@ function paymentsEffects(e: Envelope): Effects {
     });
   }
   return { wallet: null, transfer, activities };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function record(value: unknown, what: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new InvalidEnvelopeError(`${what} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function userId(payload: Record<string, unknown>, key: string, type: string): string {
+  const value = field(payload, key, type);
+  if (!UUID_RE.test(value)) {
+    throw new InvalidEnvelopeError(`${type}.${key} must be a UUID`);
+  }
+  return value.toLowerCase();
+}
+
+function splitActivities(e: Envelope): ActivityInput[] {
+  const bill = record(e.payload.bill, `${e.type}.payload.bill`);
+  const summary = {
+    billId: e.streamId,
+    title: field(bill, 'title', e.type),
+    currency: field(bill, 'currency', e.type),
+  };
+  const activity = (user: string, type: ActivityType, data: Record<string, unknown>): ActivityInput => ({
+    userId: user,
+    type,
+    occurredAt: e.occurredAt,
+    data: { ...summary, ...data },
+  });
+  switch (e.type) {
+    case 'SplitBillCreated': {
+      const shares = bill.shares;
+      if (!Array.isArray(shares)) {
+        throw new InvalidEnvelopeError('SplitBillCreated.payload.bill.shares must be an array');
+      }
+      return shares.map((raw) => {
+        const share = record(raw, 'SplitBillCreated share');
+        return activity(userId(share, 'participantId', e.type), 'split_bill_created', {
+          shareId: field(share, 'id', e.type),
+          amount: field(share, 'amount', e.type),
+          dueAt: field(bill, 'dueAt', e.type),
+          creatorEmail: field(bill, 'creatorEmail', e.type),
+        });
+      });
+    }
+    case 'SplitSharePaid': {
+      const share = record(e.payload.share, 'SplitSharePaid.payload.share');
+      return [
+        activity(userId(bill, 'creatorId', e.type), 'split_share_paid', {
+          shareId: field(share, 'id', e.type),
+          amount: field(share, 'amount', e.type),
+          participantEmail: field(share, 'participantEmail', e.type),
+          billStatus: field(bill, 'status', e.type),
+        }),
+      ];
+    }
+    case 'SplitBillSettled':
+      return [
+        activity(userId(bill, 'creatorId', e.type), 'split_bill_settled', {
+          totalAmount: field(bill, 'totalAmount', e.type),
+        }),
+      ];
+    case 'SplitShareOverdue': {
+      const share = record(e.payload.share, 'SplitShareOverdue.payload.share');
+      return [
+        activity(userId(share, 'participantId', e.type), 'split_share_overdue', {
+          shareId: field(share, 'id', e.type),
+          amount: field(share, 'amount', e.type),
+          dueAt: field(bill, 'dueAt', e.type),
+          creatorEmail: field(bill, 'creatorEmail', e.type),
+          reminderCount: share.reminderCount,
+        }),
+      ];
+    }
+    default:
+      return [];
+  }
 }
