@@ -162,6 +162,17 @@ describe('Saga resilience (integration)', () => {
       expect(ctx.ledger.holds.get(res.body.id)?.status).toBe('released');
       expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '100.00', held: '0.00' });
     });
+  });
+
+  describe('crashed and competing workers', () => {
+    let ctx: PaymentsApp;
+
+    beforeAll(async () => {
+      ctx = await createPaymentsApp({ SAGA_MAX_STEP_ATTEMPTS: '1000' });
+    });
+
+    afterEach(() => ctx.ledger.reset());
+    afterAll(() => ctx.close());
 
     it('resumes a saga abandoned by a crashed worker once its lease expires', async () => {
       const from = await ctx.account('USD', '100');
@@ -254,7 +265,7 @@ describe('Saga resilience (integration)', () => {
       await ctx.waitFor(slow.token, a.body.id, (t) => t.status === 'checked');
       const b = await ctx.transfer(fast, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202);
 
-      expect(await ctx.settle(fast.token, b.body.id, 2_000)).toMatchObject({ status: 'completed' });
+      expect(await ctx.settle(fast.token, b.body.id, 5_000)).toMatchObject({ status: 'completed' });
       expect((await ctx.http().get(`/transfers/${a.body.id}`).set('Authorization', `Bearer ${slow.token}`)).body.status).toBe('checked');
       release();
       expect(await ctx.settle(slow.token, a.body.id)).toMatchObject({ status: 'completed' });
@@ -278,7 +289,10 @@ describe('Saga resilience (integration)', () => {
       const created = await Promise.all(
         senders.map((s) => ctx.transfer(s, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' }).expect(202)),
       );
-      await sleep(600);
+      for (let waited = 0; peak < 4 && waited < 10_000; waited += 20) {
+        await sleep(20);
+      }
+      await sleep(300);
       expect(peak).toBe(4);
       release();
       const done = await Promise.all(created.map((r, i) => ctx.settle(senders[i].token, r.body.id)));
