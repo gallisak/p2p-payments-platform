@@ -7,6 +7,7 @@ import { currentUser } from '@/lib/server-api';
 const LINKS = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/wallets', label: 'Wallets' },
+  { href: '/transfers', label: 'Transfers' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
