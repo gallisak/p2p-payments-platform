@@ -37,6 +37,11 @@ export class AdminController {
     private readonly reconciliation: ReconciliationService,
   ) {}
 
+  @Get('me')
+  me() {
+    return { role: 'admin' };
+  }
+
   @Get('wallets/:id/events')
   async events(@Param('id', ParseUUIDPipe) id: string) {
     const events = await this.eventStore.readStream(this.dataSource.manager, id);

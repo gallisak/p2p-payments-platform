@@ -2,8 +2,9 @@ import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query, Res 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { BlockWalletDto } from '../dto/money.dto';
-import { PeriodQueryDto } from '../dto/query.dto';
-import { UpstreamClient } from '../upstream/upstream.client';
+import { PeriodQueryDto, TracesQueryDto } from '../dto/query.dto';
+import { summarizeTraces } from '../traces/trace-summary';
+import { UpstreamClient, UpstreamUnavailableError } from '../upstream/upstream.client';
 import { relay } from '../upstream/relay';
 
 @ApiTags('admin')
@@ -35,6 +36,25 @@ export class AdminController {
         slow: true,
       }),
     );
+  }
+
+  @Get('traces')
+  async traces(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: TracesQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const access = await this.upstream.request('ledger', 'GET', '/admin/me', { authorization });
+    if (access.status !== 200) {
+      return relay(res, access);
+    }
+    const found = await this.upstream.request('jaeger', 'GET', '/api/traces', {
+      query: { service: 'payments-service', operation: 'saga.check', lookback: '1h', limit: query.limit ?? '20' },
+    });
+    if (found.status !== 200) {
+      throw new UpstreamUnavailableError('jaeger', `HTTP ${found.status}`);
+    }
+    return summarizeTraces(found.body);
   }
 
   @Post('projections/rebuild')

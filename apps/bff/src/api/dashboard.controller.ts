@@ -1,10 +1,10 @@
 import { Controller, Get, Headers, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Upstream, UpstreamClient, UpstreamUnavailableError } from '../upstream/upstream.client';
+import { Service, UpstreamClient, UpstreamUnavailableError } from '../upstream/upstream.client';
 
 export type Section<T = unknown> = { status: 'ok'; data: T } | { status: 'unavailable'; error: string };
 
-const ERRORS: Record<Upstream, string> = {
+const ERRORS: Record<Service, string> = {
   ledger: 'Гаманці тимчасово недоступні',
   payments: 'Перекази тимчасово недоступні',
   notifications: 'Стрічка активності тимчасово недоступна',
@@ -23,7 +23,7 @@ export class DashboardController {
     if (!authorization) {
       throw new UnauthorizedException();
     }
-    const section = async (upstream: Upstream, path: string, query?: Record<string, string>): Promise<Section> => {
+    const section = async (upstream: Service, path: string, query?: Record<string, string>): Promise<Section> => {
       try {
         const res = await this.upstream.request(upstream, 'GET', path, { authorization, query });
         if (res.status === 401) {
