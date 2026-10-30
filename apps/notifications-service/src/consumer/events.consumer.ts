@@ -5,16 +5,19 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
+import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import Redis from 'ioredis';
 import { hostname } from 'os';
 import { CONSUMER_REDIS } from './redis.provider';
 import { ConsumerOptions, consumerOptionsFromEnv } from './consumer-options';
-import { EventSource, InvalidEnvelopeError, parseEnvelope } from '../events/envelope';
+import { Envelope, EventSource, InvalidEnvelopeError, parseEnvelope } from '../events/envelope';
 import { effectsOf } from '../events/effects';
 import { NotificationsStore } from '../store/notifications.store';
 import { NotificationsGateway } from '../gateway/notifications.gateway';
+import { contextFrom } from '../telemetry/trace-context';
 
 const MAX_BACKOFF_MS = 5_000;
+const tracer = trace.getTracer('notifications-service');
 
 type StreamEntry = [id: string, fields: string[]];
 
@@ -168,7 +171,7 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
     let applied;
     try {
       const envelope = parseEnvelope(source, fields.envelope);
-      applied = await this.store.apply(source, envelope.eventId, effectsOf(source, envelope));
+      applied = await this.applyTraced(stream, id, source, envelope);
     } catch (err) {
       if (err instanceof InvalidEnvelopeError) {
         await this.deadLetter(stream, id, fields, err.message, 1);
@@ -185,6 +188,34 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
         this.logger.warn(`Could not push ${stream} ${id} to clients: ${(err as Error).message}`);
       }
     }
+  }
+
+  private applyTraced(stream: string, id: string, source: EventSource, envelope: Envelope) {
+    return tracer.startActiveSpan(
+      `consume ${envelope.type}`,
+      {
+        kind: SpanKind.CONSUMER,
+        attributes: {
+          'messaging.system': 'redis',
+          'messaging.destination.name': stream,
+          'messaging.message.id': id,
+          'event.id': envelope.eventId,
+        },
+      },
+      contextFrom(envelope.traceparent),
+      async (span) => {
+        try {
+          const applied = await this.store.apply(source, envelope.eventId, effectsOf(source, envelope));
+          span.setAttribute('event.duplicate', applied.duplicate);
+          return applied;
+        } catch (err) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+          throw err;
+        } finally {
+          span.end();
+        }
+      },
+    );
   }
 
   private async deadLetterPending(stream: string, id: string, deliveries: number): Promise<void> {

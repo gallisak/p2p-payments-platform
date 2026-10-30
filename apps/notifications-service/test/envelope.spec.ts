@@ -19,6 +19,13 @@ describe('parseEnvelope', () => {
     expect(e.occurredAt).toEqual(new Date(raw.occurredAt));
   });
 
+  it('keeps the trace context of the producer', () => {
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    const raw = { ...ledgerEnvelope({ type: 'MoneyDeposited' }), metadata: { traceparent } };
+
+    expect(parseEnvelope('ledger', JSON.stringify(raw)).traceparent).toBe(traceparent);
+  });
+
   it('parses a payments envelope without a wallet snapshot', () => {
     const raw = paymentsEnvelope({ type: 'TransferInitiated', recipientId: '22222222-2222-4222-8222-222222222222' });
 

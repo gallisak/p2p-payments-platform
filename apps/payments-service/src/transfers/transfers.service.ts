@@ -16,6 +16,7 @@ import { isUniqueViolation } from '../common/db-errors';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import { SagaWorker } from '../saga/saga.worker';
 import { SplitBillsStore } from '../split-bills/split-bills.store';
+import { currentTraceparent } from '../telemetry/trace-context';
 
 const MAX_STEPS_IN_VIEW = 100;
 
@@ -85,6 +86,7 @@ export class TransfersService {
             version: 1,
             completedAt: null,
             splitShareId: splitShare?.shareId ?? null,
+            traceContext: currentTraceparent(),
           }),
         );
         if (splitShare) {

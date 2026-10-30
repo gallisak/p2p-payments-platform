@@ -5,14 +5,17 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
+import { Span, SpanStatusCode, trace } from '@opentelemetry/api';
 import { LEDGER_CLIENT, LedgerPort } from '../ledger/ledger.client';
 import { FxService } from '../fx/fx.service';
 import { Transfer } from '../transfers/entities/transfer.entity';
-import { STEP_BY_STATUS, Transition, TransferSaga } from './transfer-saga';
+import { STEP_BY_STATUS, SagaStepName, Transition, TransferSaga } from './transfer-saga';
 import { SagaStore } from './saga.store';
 import { sagaPolicyFromEnv, sagaRuntimeFromEnv } from './saga-policy';
+import { contextFrom } from '../telemetry/trace-context';
 
 const MAX_IDLE_BACKOFF_MS = 5_000;
+const tracer = trace.getTracer('payments-service');
 
 @Injectable()
 export class SagaWorker implements OnApplicationBootstrap, OnModuleDestroy {
@@ -76,12 +79,33 @@ export class SagaWorker implements OnApplicationBootstrap, OnModuleDestroy {
     if (!step) {
       return;
     }
+    await tracer.startActiveSpan(
+      `saga.${step}`,
+      { attributes: { 'transfer.id': transfer.id, 'saga.step': step, 'saga.attempt': transfer.attempts + 1 } },
+      contextFrom(transfer.traceContext),
+      async (span) => {
+        try {
+          await this.runStep(transfer, step, span);
+        } finally {
+          span.end();
+        }
+      },
+    );
+  }
+
+  private async runStep(transfer: Transfer, step: SagaStepName, span: Span): Promise<void> {
     const startedAt = new Date();
     let transition: Transition;
     try {
       transition = await this.saga.step(transfer);
     } catch (err) {
       transition = { kind: 'retry', error: (err as Error).message, delayMs: this.runtime.pollMs };
+    }
+    span.setAttribute('saga.outcome', transition.kind);
+    if (transition.kind === 'retry') {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: transition.error });
+    } else if (transition.kind !== 'advance') {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: transition.detail });
     }
     try {
       const updated = await this.store.apply(transfer, transition, {

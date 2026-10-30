@@ -18,6 +18,7 @@ export interface Envelope {
   recipientId: string | null;
   wallet: WalletState | null;
   payload: Record<string, unknown>;
+  traceparent?: unknown;
 }
 
 export class InvalidEnvelopeError extends Error {}
@@ -96,5 +97,6 @@ export function parseEnvelope(source: EventSource, raw: string | undefined): Env
         : uuid(data.recipientId, 'recipientId'),
     wallet: source === 'ledger' ? wallet(data.wallet) : null,
     payload: data.payload,
+    traceparent: isRecord(data.metadata) ? data.metadata.traceparent : undefined,
   };
 }

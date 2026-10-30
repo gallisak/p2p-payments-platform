@@ -99,4 +99,7 @@ export class Transfer {
   @Index('IDX_transfers_split_share')
   @Column('uuid', { nullable: true })
   splitShareId: string | null;
+
+  @Column('varchar', { length: 64, nullable: true })
+  traceContext: string | null;
 }
