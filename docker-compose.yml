@@ -99,6 +99,13 @@ services:
     ports:
       - '3003:3003'
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      MEMORY_MAX_TRACES: '10000'
+    ports:
+      - '127.0.0.1:16686:16686'
+
   bff:
     build: ./apps/bff
     env_file: ./apps/bff/.env.example
