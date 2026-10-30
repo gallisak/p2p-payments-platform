@@ -12,6 +12,7 @@ import { Hold } from './wallets/entities/hold.entity';
 import { LedgerEvent } from './ledger/entities/ledger-event.entity';
 import { LedgerEntry } from './ledger/entities/ledger-entry.entity';
 import { OutboxMessage } from './outbox/outbox-message.entity';
+import { MetricsController } from './telemetry/metrics.controller';
 
 @Module({
   imports: [
@@ -32,5 +33,6 @@ import { OutboxMessage } from './outbox/outbox-message.entity';
     InternalModule,
     AdminModule,
   ],
+  controllers: [MetricsController],
 })
 export class AppModule {}

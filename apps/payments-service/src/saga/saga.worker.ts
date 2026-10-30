@@ -12,6 +12,7 @@ import { Transfer } from '../transfers/entities/transfer.entity';
 import { STEP_BY_STATUS, SagaStepName, Transition, TransferSaga } from './transfer-saga';
 import { SagaStore } from './saga.store';
 import { sagaPolicyFromEnv, sagaRuntimeFromEnv } from './saga-policy';
+import { sagaStepDuration, sagaSteps } from '../telemetry/metrics';
 import { contextFrom } from '../telemetry/trace-context';
 
 const MAX_IDLE_BACKOFF_MS = 5_000;
@@ -102,6 +103,8 @@ export class SagaWorker implements OnApplicationBootstrap, OnModuleDestroy {
       transition = { kind: 'retry', error: (err as Error).message, delayMs: this.runtime.pollMs };
     }
     span.setAttribute('saga.outcome', transition.kind);
+    sagaSteps.inc({ step, outcome: transition.kind });
+    sagaStepDuration.observe({ step }, (Date.now() - startedAt.getTime()) / 1000);
     if (transition.kind === 'retry') {
       span.setStatus({ code: SpanStatusCode.ERROR, message: transition.error });
     } else if (transition.kind !== 'advance') {

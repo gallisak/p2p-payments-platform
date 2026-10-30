@@ -14,6 +14,7 @@ import { Envelope, EventSource, InvalidEnvelopeError, parseEnvelope } from '../e
 import { effectsOf } from '../events/effects';
 import { NotificationsStore } from '../store/notifications.store';
 import { NotificationsGateway } from '../gateway/notifications.gateway';
+import { eventsProcessed } from '../telemetry/metrics';
 import { contextFrom } from '../telemetry/trace-context';
 
 const MAX_BACKOFF_MS = 5_000;
@@ -177,10 +178,12 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
         await this.deadLetter(stream, id, fields, err.message, 1);
         return;
       }
+      eventsProcessed.inc({ source, result: 'retry' });
       this.logger.warn(`Could not process ${stream} ${id}, will retry: ${(err as Error).message}`);
       return;
     }
     await this.redis.xack(stream, this.options.group, id);
+    eventsProcessed.inc({ source, result: applied.duplicate ? 'duplicate' : 'applied' });
     if (!applied.duplicate) {
       try {
         this.gateway.publish(applied);
@@ -249,6 +252,7 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
       JSON.stringify(fields),
     );
     await this.redis.xack(stream, this.options.group, id);
+    eventsProcessed.inc({ source: this.sources.get(stream), result: 'dead_lettered' });
     this.logger.error(`Dead-lettered ${stream} ${id}: ${reason}`);
   }
 
