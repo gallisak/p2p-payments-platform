@@ -15,6 +15,7 @@ const LINKS = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const user = currentUser();
   const wsUrl = process.env.NOTIFICATIONS_WS_URL ?? 'http://localhost:3003';
+  const links = user?.role === 'admin' ? [...LINKS, { href: '/admin', label: 'Admin' }] : LINKS;
   return (
     <RealtimeProvider url={wsUrl}>
       <header className="border-b bg-card">
@@ -23,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             P2P Ledger
           </Link>
           <nav aria-label="Main" className="flex flex-1 flex-wrap items-center">
-            {LINKS.map((link) => (
+            {links.map((link) => (
               <Button key={link.href} variant="ghost" size="sm" asChild>
                 <Link href={link.href}>{link.label}</Link>
               </Button>
