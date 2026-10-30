@@ -100,7 +100,7 @@ describe('BFF proxy', () => {
 
       const res = await ctx.http().get('/api/wallets').set('Authorization', TOKEN).expect(503);
 
-      expect(res.body.message).toBe('ledger-service тимчасово недоступний, спробуйте пізніше');
+      expect(res.body.message).toBe('ledger-service is temporarily unavailable, please try again later');
     });
   });
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ledgerFetch } from '@/lib/api';
+import { bffFetch } from '@/lib/bff';
 import { TokenPair, authError, readJson, withSession } from '@/lib/session';
 
 export async function POST(req: NextRequest) {
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
   }
   try {
-    const tokens: TokenPair = await ledgerFetch('/auth/register', {
+    const tokens: TokenPair = await bffFetch<TokenPair>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(body),
     });

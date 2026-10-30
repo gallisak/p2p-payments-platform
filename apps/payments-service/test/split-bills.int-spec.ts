@@ -37,7 +37,7 @@ describe('Split bills on Postgres (integration)', () => {
   async function bill(creator: Account, participants: Account[], overrides: object = {}) {
     const res = await authed(creator)
       .post('/split-bills', {
-        title: 'Вечеря',
+        title: 'Dinner',
         currency: 'USD',
         totalAmount: 90,
         dueAt: inDays(7),
@@ -63,7 +63,7 @@ describe('Split bills on Postgres (integration)', () => {
       const created = await bill(creator, [a, b], { totalAmount: 100, includeCreator: true });
 
       expect(created).toMatchObject({
-        title: 'Вечеря',
+        title: 'Dinner',
         creatorId: creator.userId,
         currency: 'USD',
         totalAmount: '100.00',
@@ -298,7 +298,7 @@ describe('Split bills on Postgres (integration)', () => {
         return found.length === 2 ? found : undefined;
       });
       expect(events.map((e) => (e.envelope.payload.share as { participantId: string }).participantId)).toEqual([late.userId, late.userId]);
-      expect(events[0].envelope.payload.bill).toMatchObject({ id: created.id, title: 'Вечеря', status: 'partially_paid' });
+      expect(events[0].envelope.payload.bill).toMatchObject({ id: created.id, title: 'Dinner', status: 'partially_paid' });
     });
 
     it('does not remind a participant whose payment is in progress', async () => {

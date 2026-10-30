@@ -113,7 +113,7 @@ export class TransfersService {
   async get(senderId: string, id: string) {
     const transfer = await this.transfers.findOne({ where: { id, senderId } });
     if (!transfer) {
-      throw new NotFoundException('Переказ не знайдено');
+      throw new NotFoundException('Transfer not found');
     }
     const steps = await this.steps.find({
       where: { transferId: id },
@@ -135,7 +135,7 @@ export class TransfersService {
   private replay(existing: Transfer, hash: string): CreatedTransfer {
     if (existing.requestHash !== hash) {
       throw new UnprocessableEntityException(
-        'Idempotency-Key уже використано для іншого запиту',
+        'Idempotency-Key was already used for a different request',
       );
     }
     return { transfer: transferView(existing), replayed: true };

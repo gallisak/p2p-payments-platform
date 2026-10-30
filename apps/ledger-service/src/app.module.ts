@@ -25,7 +25,7 @@ import { MetricsController } from './telemetry/metrics.controller';
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
       entities: [User, Wallet, Hold, LedgerEvent, LedgerEntry, OutboxMessage],
-      synchronize: true, // OK для стартового репо; у бойовому коді — міграції
+      synchronize: true, // OK for the starter repo; production code would use migrations
     }),
     AuthModule,
     EmailNormalizationModule,

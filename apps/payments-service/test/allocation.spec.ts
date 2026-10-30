@@ -22,8 +22,8 @@ describe('split bill allocation', () => {
 
   it('accepts custom shares only when they add up to the total', () => {
     expect(allocateCustom(5_000n, [2_000n, 3_000n])).toEqual({ shares: [2_000n, 3_000n], creatorCents: 0n });
-    expect(() => allocateCustom(5_000n, [2_000n, 2_999n])).toThrow('дорівнювати');
-    expect(() => allocateCustom(5_000n, [5_000n, 0n])).toThrow('більшою за нуль');
+    expect(() => allocateCustom(5_000n, [2_000n, 2_999n])).toThrow('must equal');
+    expect(() => allocateCustom(5_000n, [5_000n, 0n])).toThrow('greater than zero');
     expect(() => allocateCustom(5_000n, [])).toThrow(AllocationError);
   });
 

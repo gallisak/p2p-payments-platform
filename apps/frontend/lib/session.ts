@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LedgerApiError } from './api';
+import { BffApiError } from './bff';
+import { secondsUntilExpiry } from './jwt';
 
 export const ACCESS_COOKIE = 'accessToken';
 export const REFRESH_COOKIE = 'refreshToken';
@@ -15,18 +16,6 @@ export type AuthErrorCode =
   | 'email_taken'
   | 'too_many_attempts'
   | 'unavailable';
-
-function secondsUntilExpiry(token: string): number | undefined {
-  try {
-    const payload = JSON.parse(
-      Buffer.from(token.split('.')[1], 'base64url').toString('utf8'),
-    ) as { exp?: number };
-    if (typeof payload.exp !== 'number') return undefined;
-    return Math.max(0, payload.exp - Math.floor(Date.now() / 1000));
-  } catch {
-    return undefined;
-  }
-}
 
 function isHttps(req: NextRequest): boolean {
   return (
@@ -62,7 +51,7 @@ export function withoutSession(res: NextResponse): NextResponse {
 }
 
 export function authError(err: unknown, fallback: AuthErrorCode): NextResponse {
-  const status = err instanceof LedgerApiError ? err.status : 503;
+  const status = err instanceof BffApiError ? err.status : 503;
   const byStatus: Record<number, AuthErrorCode> = {
     400: 'invalid_input',
     401: 'invalid_credentials',

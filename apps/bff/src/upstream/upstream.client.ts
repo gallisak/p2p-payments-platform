@@ -24,7 +24,7 @@ export class UpstreamUnavailableError extends Error {
     readonly upstream: Upstream,
     reason: string,
   ) {
-    super(`${upstream}-service недоступний: ${reason}`);
+    super(`${upstream}-service is unavailable: ${reason}`);
   }
 }
 
@@ -94,7 +94,7 @@ function parseBody(text: string, contentType: string | null): unknown {
     try {
       return JSON.parse(text);
     } catch {
-      return { message: 'Некоректна відповідь сервісу' };
+      return { message: 'Invalid service response' };
     }
   }
   return { message: text };

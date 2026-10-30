@@ -46,7 +46,7 @@ export class AdminController {
   async events(@Param('id', ParseUUIDPipe) id: string) {
     const events = await this.eventStore.readStream(this.dataSource.manager, id);
     if (events.length === 0) {
-      throw new NotFoundException('Гаманець не знайдено');
+      throw new NotFoundException('Wallet not found');
     }
     return events.map((e) => ({
       position: e.position,

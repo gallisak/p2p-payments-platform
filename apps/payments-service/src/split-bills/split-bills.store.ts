@@ -46,13 +46,13 @@ export class SplitBillsStore {
   ): Promise<void> {
     const { bill, share } = await this.lock(manager, target.billId, target.shareId);
     if (!bill || !share || share.participantId !== participantId) {
-      throw new NotFoundException('Частку не знайдено');
+      throw new NotFoundException('Share not found');
     }
     if (share.status === 'paid') {
-      throw new ConflictException('Частку вже оплачено');
+      throw new ConflictException('The share is already paid');
     }
     if (share.status === 'paying') {
-      throw new ConflictException('Оплата цієї частки вже виконується');
+      throw new ConflictException('Payment for this share is already in progress');
     }
     share.status = 'paying';
     share.transferId = transferId;
