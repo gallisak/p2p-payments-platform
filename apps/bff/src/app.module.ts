@@ -4,6 +4,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { ActivityController } from './api/activity.controller';
 import { AdminController } from './api/admin.controller';
 import { AuthController } from './api/auth.controller';
+import { DashboardController } from './api/dashboard.controller';
 import { HealthController } from './api/health.controller';
 import { SplitBillsController } from './api/split-bills.controller';
 import { TransfersController } from './api/transfers.controller';
@@ -16,6 +17,7 @@ import { UpstreamUnavailableFilter } from './upstream/upstream-unavailable.filte
   controllers: [
     HealthController,
     AuthController,
+    DashboardController,
     WalletsController,
     TransfersController,
     SplitBillsController,
