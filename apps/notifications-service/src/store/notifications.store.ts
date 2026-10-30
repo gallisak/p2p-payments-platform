@@ -48,7 +48,7 @@ export function decodeCursor(cursor: string): { occurredAt: Date; id: string } {
     }
     return { occurredAt: date, id };
   } catch {
-    throw new InvalidCursorError('Невалідний cursor');
+    throw new InvalidCursorError('Invalid cursor');
   }
 }
 

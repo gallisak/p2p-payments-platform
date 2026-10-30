@@ -212,7 +212,7 @@ describe('Event-sourced ledger on Postgres (integration)', () => {
           !(
             o.action === 'withdraw' &&
             o.status === 400 &&
-            o.message === 'Недостатньо коштів'
+            o.message === 'Insufficient funds'
           ),
       );
       expect(unexpected).toEqual([]);

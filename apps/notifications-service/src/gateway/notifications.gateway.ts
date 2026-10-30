@@ -62,7 +62,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
         throw new Error('invalid subject');
       }
     } catch {
-      client.emit('unauthorized', { message: 'Потрібен дійсний access token' });
+      client.emit('unauthorized', { message: 'A valid access token is required' });
       client.disconnect(true);
       return;
     }
@@ -71,7 +71,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     if (typeof payload.exp === 'number') {
       const ms = Math.min(Math.max(payload.exp * 1000 - Date.now(), 0), MAX_TIMER_MS);
       data.expiryTimer = setTimeout(() => {
-        client.emit('session.expired', { message: 'Access token сплив, перепідключіться з новим' });
+        client.emit('session.expired', { message: 'Access token expired, reconnect with a new one' });
         client.disconnect(true);
       }, ms);
       data.expiryTimer.unref();
@@ -85,7 +85,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       client.emit('snapshot', await this.store.snapshot(userId));
     } catch (err) {
       this.logger.warn(`Snapshot for ${userId} failed: ${(err as Error).message}`);
-      client.emit('snapshot.failed', { message: 'Не вдалося отримати поточний стан, спробуйте ще раз' });
+      client.emit('snapshot.failed', { message: 'Could not load the current state, please try again' });
     }
   }
 

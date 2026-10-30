@@ -51,7 +51,7 @@ export class HoldsService {
         }
         this.ledger.assertActive(wallet);
         if (this.ledger.available(wallet) < cents) {
-          throw new BadRequestException('Недостатньо коштів');
+          throw new BadRequestException('Insufficient funds');
         }
         await this.ledger.record(manager, wallet, 'HoldPlaced', {
           holdId: input.holdId,
@@ -85,10 +85,10 @@ export class HoldsService {
     const known = await this.holds.findOne({ where: { id: holdId } });
     const target = known?.walletId ?? walletId;
     if (!target) {
-      throw new NotFoundException('Холд не знайдено');
+      throw new NotFoundException('Hold not found');
     }
     if (walletId && target !== walletId) {
-      throw new BadRequestException('Холд належить іншому гаманцю');
+      throw new BadRequestException('The hold belongs to another wallet');
     }
     return this.dataSource.transaction(async (manager) => {
       const wallets = await this.ledger.lockAll(manager, [target]);
@@ -113,13 +113,13 @@ export class HoldsService {
         );
       }
       if (hold.walletId !== target) {
-        throw new BadRequestException('Холд належить іншому гаманцю');
+        throw new BadRequestException('The hold belongs to another wallet');
       }
       if (hold.status === 'released' || hold.status === 'voided') {
         return hold;
       }
       if (hold.status === 'captured') {
-        throw new ConflictException('Холд уже списано');
+        throw new ConflictException('The hold was already captured');
       }
       await this.ledger.record(manager, wallet, 'HoldReleased', {
         holdId,
@@ -134,7 +134,7 @@ export class HoldsService {
   async capture(holdId: string, input: CaptureHoldInput): Promise<Hold> {
     const { walletId } = await this.find(holdId);
     if (input.toWalletId === walletId) {
-      throw new BadRequestException('Не можна переказати на той самий гаманець');
+      throw new BadRequestException('Cannot transfer to the same wallet');
     }
     const creditCents = toCents(input.amount);
     return this.dataSource.transaction(async (manager) => {
@@ -148,18 +148,18 @@ export class HoldsService {
         ) {
           return hold;
         }
-        throw new ConflictException('Холд уже списано з іншими параметрами');
+        throw new ConflictException('The hold was already captured with different parameters');
       }
       if (hold.status === 'released' || hold.status === 'voided') {
-        throw new ConflictException('Холд уже знято');
+        throw new ConflictException('The hold was already released');
       }
       const recipient = wallets.get(input.toWalletId);
       if (!recipient) {
-        throw new NotFoundException('Гаманець отримувача не знайдено');
+        throw new NotFoundException('Recipient wallet not found');
       }
       if (recipient.currency !== input.currency) {
         throw new BadRequestException(
-          'Валюта зарахування не збігається з валютою гаманця отримувача',
+          'The credit currency does not match the recipient wallet currency',
         );
       }
       const sender = this.required(wallets, walletId);
@@ -168,7 +168,7 @@ export class HoldsService {
       const debitCents = toCents(hold.amount);
       if (recipient.currency === sender.currency && creditCents !== debitCents) {
         throw new BadRequestException(
-          'Для переказу в тій самій валюті сума зарахування має дорівнювати сумі списання',
+          'For a same-currency transfer the credit amount must equal the debit amount',
         );
       }
 
@@ -217,7 +217,7 @@ export class HoldsService {
   private async find(holdId: string): Promise<Hold> {
     const hold = await this.holds.findOne({ where: { id: holdId } });
     if (!hold) {
-      throw new NotFoundException('Холд не знайдено');
+      throw new NotFoundException('Hold not found');
     }
     return hold;
   }
@@ -232,17 +232,17 @@ export class HoldsService {
   private required<T>(map: Map<string, T>, id: string): T {
     const value = map.get(id);
     if (!value) {
-      throw new NotFoundException('Гаманець не знайдено');
+      throw new NotFoundException('Wallet not found');
     }
     return value;
   }
 
   private samePlacement(hold: Hold, walletId: string, cents: bigint): Hold {
     if (hold.status === 'voided') {
-      throw new ConflictException('Холд уже скасовано');
+      throw new ConflictException('The hold was already voided');
     }
     if (hold.walletId !== walletId || toCents(hold.amount) !== cents) {
-      throw new ConflictException('Холд з таким id уже існує з іншими параметрами');
+      throw new ConflictException('A hold with this id already exists with different parameters');
     }
     return hold;
   }

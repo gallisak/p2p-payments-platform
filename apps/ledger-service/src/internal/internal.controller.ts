@@ -34,7 +34,7 @@ export class InternalController {
   async resolveRecipient(@Body() dto: ResolveRecipientDto) {
     const userId = await this.auth.findUserIdByEmail(dto.email);
     if (!userId) {
-      throw new NotFoundException('Отримувача не знайдено');
+      throw new NotFoundException('Recipient not found');
     }
     const wallet = await this.wallets.open(userId, dto.currency);
     return {

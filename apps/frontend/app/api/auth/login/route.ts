@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ledgerFetch } from '@/lib/api';
+import { bffFetch } from '@/lib/bff';
 import { TokenPair, authError, readJson, withSession } from '@/lib/session';
 
-// Проксі до ledger-service, щоб зберігати токени в httpOnly cookie,
-// а не в localStorage на клієнті.
+// Proxies to the BFF so tokens live in httpOnly cookies, not in localStorage.
 export async function POST(req: NextRequest) {
   const body = await readJson(req);
   if (body === undefined) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
   }
   try {
-    const tokens: TokenPair = await ledgerFetch('/auth/login', {
+    const tokens: TokenPair = await bffFetch<TokenPair>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(body),
     });

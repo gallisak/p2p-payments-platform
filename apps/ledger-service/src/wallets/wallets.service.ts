@@ -37,7 +37,7 @@ export class WalletsService {
       where: { id: walletId, ownerId },
     });
     if (!wallet) {
-      throw new NotFoundException('Гаманець не знайдено');
+      throw new NotFoundException('Wallet not found');
     }
     return wallet;
   }
@@ -104,7 +104,7 @@ export class WalletsService {
   private async lockExisting(manager: EntityManager, walletId: string): Promise<Wallet> {
     const wallet = (await this.ledger.lockAll(manager, [walletId])).get(walletId);
     if (!wallet) {
-      throw new NotFoundException('Гаманець не знайдено');
+      throw new NotFoundException('Wallet not found');
     }
     return wallet;
   }
@@ -137,7 +137,7 @@ export class WalletsService {
       const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
       this.ledger.assertActive(wallet);
       if (this.ledger.available(wallet) < cents) {
-        throw new BadRequestException('Недостатньо коштів');
+        throw new BadRequestException('Insufficient funds');
       }
       return this.ledger.record(manager, wallet, 'MoneyWithdrawn', {
         operationId: randomUUID(),

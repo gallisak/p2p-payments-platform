@@ -59,7 +59,7 @@ export class TransferSaga {
       throw new Error(`Transfer ${transfer.id} is already ${transfer.status}`);
     }
     if (step !== 'compensate' && this.ports.now() >= transfer.deadlineAt) {
-      return this.failure(transfer, 'timed_out', 'Переказ не завершився вчасно');
+      return this.failure(transfer, 'timed_out', 'The transfer did not finish in time');
     }
     try {
       switch (step) {
@@ -88,35 +88,35 @@ export class TransferSaga {
       (status) => (status === 404 ? 'source_wallet_not_found' : 'rejected_by_ledger'),
     );
     if (source.blocked) {
-      throw new StepFailure('source_wallet_blocked', 'Гаманець відправника заблоковано');
+      throw new StepFailure('source_wallet_blocked', 'The sender wallet is blocked');
     }
     if (this.policy.blockedRecipients.has(t.recipientEmail.toLowerCase())) {
-      throw new StepFailure('recipient_not_allowed', 'Переказ цьому отримувачу заборонено');
+      throw new StepFailure('recipient_not_allowed', 'Transfers to this recipient are not allowed');
     }
     const recipient = await this.rejectedAs(
       () => this.ports.ledger.resolveRecipient(t.recipientEmail, t.toCurrency),
       (status) => (status === 404 ? 'recipient_not_found' : 'rejected_by_ledger'),
     );
     if (recipient.walletId === t.fromWalletId) {
-      throw new StepFailure('same_wallet', 'Не можна переказати на той самий гаманець');
+      throw new StepFailure('same_wallet', 'Cannot transfer to the same wallet');
     }
     if (recipient.blocked) {
-      throw new StepFailure('recipient_blocked', 'Гаманець отримувача заблоковано');
+      throw new StepFailure('recipient_blocked', 'The recipient wallet is blocked');
     }
 
     const amountCents = toCents(t.amount);
     const quote = await this.ports.quote(source.currency, t.toCurrency);
     const creditCents = convertCents(amountCents, parseMicro(quote.rate));
     if (creditCents <= 0n) {
-      throw new StepFailure('amount_too_small', 'Сума після конвертації дорівнює нулю');
+      throw new StepFailure('amount_too_small', 'The amount is zero after conversion');
     }
     const usd = await this.ports.quote(source.currency, 'USD');
     const limitCents = convertCents(amountCents, parseMicro(usd.rate));
     if (limitCents > this.policy.maxTransferUsdCents) {
-      throw new StepFailure('limit_exceeded', 'Перевищено ліміт на один переказ');
+      throw new StepFailure('limit_exceeded', 'Per-transfer limit exceeded');
     }
     if (!(await this.ports.reserveDailyLimit(t, limitCents, this.policy.dailyLimitUsdCents))) {
-      throw new StepFailure('daily_limit_exceeded', 'Перевищено денний ліміт переказів');
+      throw new StepFailure('daily_limit_exceeded', 'Daily transfer limit exceeded');
     }
 
     return this.advance('checked', {
@@ -154,7 +154,7 @@ export class TransferSaga {
       (status) => (status === 404 ? 'recipient_not_found' : 'rejected_by_ledger'),
     );
     if (recipient.blocked) {
-      throw new StepFailure('recipient_blocked', 'Гаманець отримувача заблоковано');
+      throw new StepFailure('recipient_blocked', 'The recipient wallet is blocked');
     }
     return this.advance('confirmed', {});
   }
@@ -194,7 +194,7 @@ export class TransferSaga {
 
   private assertRateFresh(t: Transfer): void {
     if (!t.rateExpiresAt || this.ports.now() >= t.rateExpiresAt) {
-      throw new StepFailure('rate_expired', 'Курс валют застарів');
+      throw new StepFailure('rate_expired', 'The exchange rate has expired');
     }
   }
 
@@ -226,7 +226,7 @@ export class TransferSaga {
     const error = err instanceof Error ? err.message : String(err);
     const attempt = t.attempts + 1;
     if (t.status !== 'compensating' && attempt >= this.policy.maxStepAttempts) {
-      return this.failure(t, 'ledger_unavailable', `Крок не вдався після ${attempt} спроб: ${error}`);
+      return this.failure(t, 'ledger_unavailable', `The step failed after ${attempt} attempts: ${error}`);
     }
     const backoff = Math.min(
       this.policy.retryBaseMs * 2 ** Math.min(t.attempts, 20),

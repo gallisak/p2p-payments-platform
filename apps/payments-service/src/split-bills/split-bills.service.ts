@@ -44,29 +44,29 @@ export class SplitBillsService {
     const creatorEmail = user.email.trim().toLowerCase();
     const emails = dto.participants.map((p) => p.email.trim().toLowerCase());
     if (new Set(emails).size !== emails.length) {
-      throw new BadRequestException('Кожен учасник має бути вказаний один раз');
+      throw new BadRequestException('Each participant must be listed only once');
     }
     if (emails.includes(creatorEmail)) {
-      throw new BadRequestException('Ініціатор не може бути учасником; використайте includeCreator');
+      throw new BadRequestException('The creator cannot be a participant; use includeCreator');
     }
     const dueAt = new Date(dto.dueAt);
     if (dueAt.getTime() <= Date.now() || dueAt.getTime() > Date.now() + MAX_DUE_MS) {
-      throw new BadRequestException('Термін оплати має бути в майбутньому, не далі ніж через рік');
+      throw new BadRequestException('The due date must be in the future and within one year');
     }
     const totalCents = toCents(dto.totalAmount);
     let allocation;
     try {
       if (dto.split === 'equal') {
         if (dto.participants.some((p) => p.amount !== undefined)) {
-          throw new AllocationError('Для рівного розподілу суми часток не вказуються');
+          throw new AllocationError('Share amounts are not provided for an equal split');
         }
         allocation = allocateEqually(totalCents, emails.length, dto.includeCreator === true);
       } else {
         if (dto.includeCreator) {
-          throw new AllocationError('includeCreator доступний лише для рівного розподілу');
+          throw new AllocationError('includeCreator is only available for an equal split');
         }
         if (dto.participants.some((p) => p.amount === undefined)) {
-          throw new AllocationError('Для кастомного розподілу вкажіть суму кожної частки');
+          throw new AllocationError('Provide an amount for every share in a custom split');
         }
         allocation = allocateCustom(totalCents, dto.participants.map((p) => toCents(p.amount as number)));
       }
@@ -78,11 +78,11 @@ export class SplitBillsService {
     }
     const usd = await this.fx.quote(dto.currency, 'USD');
     if (allocation.shares.some((cents) => convertCents(cents, parseMicro(usd.rate)) > this.maxTransferUsdCents)) {
-      throw new BadRequestException('Частка перевищує ліміт на один переказ, тож її неможливо буде оплатити');
+      throw new BadRequestException('The share exceeds the per-transfer limit, so it could not be paid');
     }
     const participants = await Promise.all(emails.map((email) => this.resolveParticipant(email, dto.currency)));
     if (participants.some((p) => p.ownerId === user.userId)) {
-      throw new BadRequestException('Ініціатор не може бути учасником; використайте includeCreator');
+      throw new BadRequestException('The creator cannot be a participant; use includeCreator');
     }
 
     const billId = randomUUID();
@@ -161,7 +161,7 @@ export class SplitBillsService {
     const { bill, shares } = await this.visible(user.userId, billId);
     const share = shares.find((s) => s.id === shareId);
     if (!share || share.participantId !== user.userId) {
-      throw new NotFoundException('Частку не знайдено');
+      throw new NotFoundException('Share not found');
     }
     const payment = {
       fromWalletId: dto.fromWalletId,
@@ -172,9 +172,9 @@ export class SplitBillsService {
     if (await this.transfers.exists(user.userId, key)) {
       return this.transfers.create(user.userId, key, payment, { billId, shareId });
     }
-    const wallet = await this.ledgerCall(() => this.ledger.getWallet(dto.fromWalletId, user.userId), 'Гаманець не знайдено');
+    const wallet = await this.ledgerCall(() => this.ledger.getWallet(dto.fromWalletId, user.userId), 'Wallet not found');
     if (wallet.currency !== bill.currency) {
-      throw new BadRequestException(`Частку можна оплатити лише з гаманця в ${bill.currency}`);
+      throw new BadRequestException(`The share can only be paid from a ${bill.currency} wallet`);
     }
     return this.transfers.create(user.userId, key, payment, { billId, shareId });
   }
@@ -188,7 +188,7 @@ export class SplitBillsService {
         })
       : [];
     if (!bill || (bill.creatorId !== userId && !shares.some((s) => s.participantId === userId))) {
-      throw new NotFoundException('Рахунок не знайдено');
+      throw new NotFoundException('Bill not found');
     }
     return { bill, shares };
   }
@@ -196,7 +196,7 @@ export class SplitBillsService {
   private async resolveParticipant(email: string, currency: string) {
     const wallet = await this.ledgerCall(
       () => this.ledger.resolveRecipient(email, currency),
-      `Учасника ${email} не знайдено`,
+      `Participant ${email} not found`,
     );
     return { email, ownerId: wallet.ownerId };
   }
@@ -209,7 +209,7 @@ export class SplitBillsService {
         throw new BadRequestException(notFound);
       }
       if (err instanceof LedgerUnavailableError) {
-        throw new ServiceUnavailableException('ledger-service тимчасово недоступний, спробуйте пізніше');
+        throw new ServiceUnavailableException('ledger-service is temporarily unavailable, please try again later');
       }
       throw err;
     }

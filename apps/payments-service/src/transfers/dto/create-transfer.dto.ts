@@ -9,7 +9,7 @@ export class CreateTransferDto {
   @IsString()
   @IsEmail()
   @MaxLength(254)
-  toWalletIdentifier: string; // email отримувача
+  toWalletIdentifier: string; // recipient email
 
   @IsMoneyAmount()
   amount: number;

@@ -16,7 +16,7 @@ describe('Split bills across payments, ledger and notifications (e2e)', () => {
     const created = await call('POST', `${PAYMENTS_URL}/split-bills`, {
       token: host.token,
       body: {
-        title: 'Квитки',
+        title: 'Tickets',
         currency: 'EUR',
         totalAmount: 90,
         dueAt: new Date(Date.now() + 86_400_000).toISOString(),
@@ -31,7 +31,7 @@ describe('Split bills across payments, ledger and notifications (e2e)', () => {
     expect(bill).toMatchObject({ status: 'pending', creatorAmount: '30.00' });
 
     const invited = await until(async () => (await activity(alice, '?type=split_bill_created')).items[0], 20_000, 'alice to be invited');
-    expect(invited.data).toMatchObject({ billId: bill.id, amount: '30.00', creatorEmail: host.email, title: 'Квитки' });
+    expect(invited.data).toMatchObject({ billId: bill.id, amount: '30.00', creatorEmail: host.email, title: 'Tickets' });
 
     for (const [user, wallet] of [[alice, aliceWallet], [bob, bobWallet]] as const) {
       const paid = await call('POST', `${PAYMENTS_URL}/split-bills/${bill.id}/shares/${shareOf(user.userId).id}/pay`, {
@@ -62,7 +62,7 @@ describe('Split bills across payments, ledger and notifications (e2e)', () => {
     const created = await call('POST', `${PAYMENTS_URL}/split-bills`, {
       token: host.token,
       body: {
-        title: 'Оренда',
+        title: 'Rent',
         currency: 'USD',
         totalAmount: 40,
         dueAt: new Date(Date.now() + 86_400_000).toISOString(),
@@ -81,6 +81,6 @@ describe('Split bills across payments, ledger and notifications (e2e)', () => {
     }
 
     const reminder = await until(async () => (await activity(late, '?type=split_share_overdue')).items[0], 20_000, 'the reminder');
-    expect(reminder.data).toMatchObject({ billId: created.body.id, title: 'Оренда', amount: '40.00', currency: 'USD', reminderCount: 1 });
+    expect(reminder.data).toMatchObject({ billId: created.body.id, title: 'Rent', amount: '40.00', currency: 'USD', reminderCount: 1 });
   });
 });

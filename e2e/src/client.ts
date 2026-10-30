@@ -6,6 +6,7 @@ export const PAYMENTS_URL = process.env.PAYMENTS_URL ?? 'http://localhost:3002';
 export const NOTIFICATIONS_URL = process.env.NOTIFICATIONS_URL ?? 'http://localhost:3003';
 export const BFF_URL = process.env.BFF_URL ?? 'http://localhost:3004';
 export const JAEGER_URL = process.env.JAEGER_URL ?? 'http://localhost:16686';
+export const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@ledger.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'change-me-admin';
 

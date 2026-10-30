@@ -159,12 +159,12 @@ export class FakeLedger {
     switch (call.op) {
       case 'wallet': {
         const wallet = this.wallets.get(call.path.split('/')[3]);
-        if (!wallet || wallet.ownerId !== url.searchParams.get('ownerId')) throw fail(404, 'Гаманець не знайдено');
+        if (!wallet || wallet.ownerId !== url.searchParams.get('ownerId')) throw fail(404, 'Wallet not found');
         return this.walletView(wallet);
       }
       case 'recipient': {
         const ownerId = this.users.get(String(call.body.email));
-        if (!ownerId) throw fail(404, 'Отримувача не знайдено');
+        if (!ownerId) throw fail(404, 'Recipient not found');
         return this.walletView(this.openWallet(ownerId, String(call.body.currency)));
       }
       case 'place':
@@ -178,17 +178,17 @@ export class FakeLedger {
 
   private place(body: Record<string, unknown>) {
     const wallet = this.wallets.get(String(body.walletId));
-    if (!wallet || wallet.ownerId !== body.ownerId) throw fail(404, 'Гаманець не знайдено');
+    if (!wallet || wallet.ownerId !== body.ownerId) throw fail(404, 'Wallet not found');
     const amount = toCents(Number(body.amount));
     const existing = this.holds.get(String(body.holdId));
     if (existing) {
       if (existing.status === 'voided' || existing.walletId !== wallet.walletId || existing.amount !== amount) {
-        throw fail(409, 'Холд з таким id уже існує з іншими параметрами');
+        throw fail(409, 'A hold with this id already exists with different parameters');
       }
       return this.holdView(existing);
     }
-    if (wallet.blocked) throw fail(423, 'Гаманець заблоковано');
-    if (wallet.balance - wallet.held < amount) throw fail(400, 'Недостатньо коштів');
+    if (wallet.blocked) throw fail(423, 'The wallet is blocked');
+    if (wallet.balance - wallet.held < amount) throw fail(400, 'Insufficient funds');
     const hold: FakeHold = { id: String(body.holdId), walletId: wallet.walletId, amount, currency: wallet.currency, status: 'placed' };
     wallet.held += amount;
     this.holds.set(hold.id, hold);
@@ -199,13 +199,13 @@ export class FakeLedger {
     const hold = this.holds.get(holdId);
     if (!hold) {
       const wallet = walletId ? this.wallets.get(walletId) : undefined;
-      if (!wallet) throw fail(404, 'Холд не знайдено');
+      if (!wallet) throw fail(404, 'Hold not found');
       const voided: FakeHold = { id: holdId, walletId: wallet.walletId, amount: 0n, currency: wallet.currency, status: 'voided' };
       this.holds.set(holdId, voided);
       return this.holdView(voided);
     }
-    if (walletId && hold.walletId !== walletId) throw fail(400, 'Холд належить іншому гаманцю');
-    if (hold.status === 'captured') throw fail(409, 'Холд уже списано');
+    if (walletId && hold.walletId !== walletId) throw fail(400, 'The hold belongs to another wallet');
+    if (hold.status === 'captured') throw fail(409, 'The hold was already captured');
     if (hold.status === 'placed') {
       (this.wallets.get(hold.walletId) as FakeWallet).held -= hold.amount;
       hold.status = 'released';
@@ -215,18 +215,18 @@ export class FakeLedger {
 
   private capture(holdId: string, body: Record<string, unknown>) {
     const hold = this.holds.get(holdId);
-    if (!hold) throw fail(404, 'Холд не знайдено');
+    if (!hold) throw fail(404, 'Hold not found');
     const credit = toCents(Number(body.amount));
     if (hold.status === 'captured') {
       if (hold.toWalletId === body.toWalletId && hold.creditAmount === credit) return this.holdView(hold);
-      throw fail(409, 'Холд уже списано з іншими параметрами');
+      throw fail(409, 'The hold was already captured with different parameters');
     }
-    if (hold.status !== 'placed') throw fail(409, 'Холд уже знято');
+    if (hold.status !== 'placed') throw fail(409, 'The hold was already released');
     const sender = this.wallets.get(hold.walletId) as FakeWallet;
     const recipient = this.wallets.get(String(body.toWalletId));
-    if (!recipient) throw fail(404, 'Гаманець отримувача не знайдено');
-    if (recipient.currency !== body.currency) throw fail(400, 'Валюта не збігається');
-    if (sender.blocked || recipient.blocked) throw fail(423, 'Гаманець заблоковано');
+    if (!recipient) throw fail(404, 'Recipient wallet not found');
+    if (recipient.currency !== body.currency) throw fail(400, 'Currency does not match');
+    if (sender.blocked || recipient.blocked) throw fail(423, 'The wallet is blocked');
     sender.held -= hold.amount;
     sender.balance -= hold.amount;
     recipient.balance += credit;

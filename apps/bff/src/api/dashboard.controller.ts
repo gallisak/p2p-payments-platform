@@ -5,9 +5,9 @@ import { Service, UpstreamClient, UpstreamUnavailableError } from '../upstream/u
 export type Section<T = unknown> = { status: 'ok'; data: T } | { status: 'unavailable'; error: string };
 
 const ERRORS: Record<Service, string> = {
-  ledger: 'Гаманці тимчасово недоступні',
-  payments: 'Перекази тимчасово недоступні',
-  notifications: 'Стрічка активності тимчасово недоступна',
+  ledger: 'Wallets are temporarily unavailable',
+  payments: 'Transfers are temporarily unavailable',
+  notifications: 'The activity feed is temporarily unavailable',
 };
 
 class Unauthorized extends Error {}

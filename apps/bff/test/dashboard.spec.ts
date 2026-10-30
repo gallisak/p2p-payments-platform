@@ -48,7 +48,7 @@ describe('BFF dashboard', () => {
       const res = await ctx.http().get('/api/dashboard').set('Authorization', TOKEN).expect(200);
 
       expect(Date.now() - started).toBeLessThan(1_500);
-      expect(res.body.transfers).toEqual({ status: 'unavailable', error: 'Перекази тимчасово недоступні' });
+      expect(res.body.transfers).toEqual({ status: 'unavailable', error: 'Transfers are temporarily unavailable' });
       expect(res.body.wallets.status).toBe('ok');
       expect(res.body.activity.status).toBe('ok');
     });

@@ -11,7 +11,7 @@ export class UpstreamUnavailableFilter implements ExceptionFilter {
       .status(HttpStatus.SERVICE_UNAVAILABLE)
       .json({
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-        message: `${err.upstream}-service тимчасово недоступний, спробуйте пізніше`,
+        message: `${err.upstream}-service is temporarily unavailable, please try again later`,
       });
   }
 }

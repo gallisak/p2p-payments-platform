@@ -37,7 +37,7 @@ describe('Split bills on Postgres (integration)', () => {
   async function bill(creator: Account, participants: Account[], overrides: object = {}) {
     const res = await authed(creator)
       .post('/split-bills', {
-        title: 'Вечеря',
+        title: 'Dinner',
         currency: 'USD',
         totalAmount: 90,
         dueAt: inDays(7),
@@ -63,7 +63,7 @@ describe('Split bills on Postgres (integration)', () => {
       const created = await bill(creator, [a, b], { totalAmount: 100, includeCreator: true });
 
       expect(created).toMatchObject({
-        title: 'Вечеря',
+        title: 'Dinner',
         creatorId: creator.userId,
         currency: 'USD',
         totalAmount: '100.00',
@@ -200,19 +200,18 @@ describe('Split bills on Postgres (integration)', () => {
       const a = await ctx.account('USD', '100');
       const created = await bill(creator, [a], { totalAmount: 20 });
       const shareId = shareOf(created, a).id;
-      const key = randomUUID();
+      const repeated = randomUUID();
+      const keys = [...Array(5).fill(repeated), ...Array.from({ length: 5 }, () => randomUUID())];
 
-      const responses = await Promise.all([
-        ...Array.from({ length: 5 }, () => pay(created, shareId, a, key)),
-        ...Array.from({ length: 5 }, () => pay(created, shareId, a)),
-      ]);
+      const responses = await Promise.all(keys.map((key) => pay(created, shareId, a, key)));
       const accepted = responses.filter((r) => r.status === 202);
       expect(accepted).toHaveLength(1);
+      const winningKey = keys[responses.indexOf(accepted[0])];
       expect(responses.filter((r) => ![200, 202, 409].includes(r.status))).toEqual([]);
       const transferId = accepted[0].body.id;
       await ctx.settle(a.token, transferId);
 
-      const replay = await pay(created, shareId, a, key);
+      const replay = await pay(created, shareId, a, winningKey);
       const another = await pay(created, shareId, a);
       expect(replay.status).toBe(200);
       expect(replay.body.id).toBe(transferId);
@@ -298,7 +297,7 @@ describe('Split bills on Postgres (integration)', () => {
         return found.length === 2 ? found : undefined;
       });
       expect(events.map((e) => (e.envelope.payload.share as { participantId: string }).participantId)).toEqual([late.userId, late.userId]);
-      expect(events[0].envelope.payload.bill).toMatchObject({ id: created.id, title: 'Вечеря', status: 'partially_paid' });
+      expect(events[0].envelope.payload.bill).toMatchObject({ id: created.id, title: 'Dinner', status: 'partially_paid' });
     });
 
     it('does not remind a participant whose payment is in progress', async () => {

@@ -36,7 +36,7 @@ export class AuthService implements OnModuleInit {
     const email = normalizeEmail(dto.email);
     const existing = await this.users.findOne({ where: { email } });
     if (existing) {
-      throw new ConflictException('Email вже зареєстровано');
+      throw new ConflictException('Email is already registered');
     }
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.users.save(
@@ -50,11 +50,11 @@ export class AuthService implements OnModuleInit {
       where: { email: normalizeEmail(dto.email) },
     });
     if (!user) {
-      throw new UnauthorizedException('Невірний email або пароль');
+      throw new UnauthorizedException('Invalid email or password');
     }
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
-      throw new UnauthorizedException('Невірний email або пароль');
+      throw new UnauthorizedException('Invalid email or password');
     }
     return this.issueTokens(user);
   }
@@ -73,16 +73,31 @@ export class AuthService implements OnModuleInit {
         secret: requireJwtSecret('JWT_REFRESH_SECRET'),
       });
     } catch {
-      throw new UnauthorizedException('Невалідний refresh token');
+      throw new UnauthorizedException('Invalid refresh token');
     }
     const user = await this.users.findOne({ where: { id: payload.sub } });
     if (!user || !user.refreshTokenHash) {
-      throw new UnauthorizedException('Refresh token відкликано');
+      throw new UnauthorizedException('Refresh token was revoked');
     }
     if (!this.matchesStoredHash(refreshToken, user.refreshTokenHash)) {
-      throw new UnauthorizedException('Refresh token відкликано');
+      throw new UnauthorizedException('Refresh token was revoked');
     }
     return this.issueTokens(user, user.refreshTokenHash);
+  }
+
+  async logout(refreshToken: string): Promise<void> {
+    let payload: { sub: string };
+    try {
+      payload = this.jwt.verify(refreshToken, {
+        secret: requireJwtSecret('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      return;
+    }
+    await this.users.update(
+      { id: payload.sub, refreshTokenHash: this.hashToken(refreshToken) },
+      { refreshTokenHash: null },
+    );
   }
 
   private async issueTokens(
@@ -109,7 +124,7 @@ export class AuthService implements OnModuleInit {
         { refreshTokenHash },
       );
       if (result.affected !== 1) {
-        throw new UnauthorizedException('Refresh token відкликано');
+        throw new UnauthorizedException('Refresh token was revoked');
       }
     }
     return { accessToken, refreshToken };

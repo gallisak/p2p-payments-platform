@@ -30,7 +30,7 @@ export class WalletLedger {
       lock: { mode: 'pessimistic_write' },
     });
     if (!wallet) {
-      throw new NotFoundException('Гаманець не знайдено');
+      throw new NotFoundException('Wallet not found');
     }
     return wallet;
   }
@@ -54,7 +54,7 @@ export class WalletLedger {
 
   assertActive(wallet: Wallet): void {
     if (wallet.blocked) {
-      throw new HttpException('Гаманець заблоковано', WALLET_LOCKED_STATUS);
+      throw new HttpException('The wallet is blocked', WALLET_LOCKED_STATUS);
     }
   }
 

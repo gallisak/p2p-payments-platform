@@ -11,10 +11,10 @@ export interface Allocation {
 export function allocateEqually(totalCents: bigint, participants: number, includeCreator: boolean): Allocation {
   const parts = BigInt(participants + (includeCreator ? 1 : 0));
   if (participants < 1) {
-    throw new AllocationError('Потрібен хоча б один учасник');
+    throw new AllocationError('At least one participant is required');
   }
   if (totalCents < parts) {
-    throw new AllocationError('Сума замала, щоб розділити її між усіма учасниками');
+    throw new AllocationError('The amount is too small to split between all participants');
   }
   const base = totalCents / parts;
   let remainder = totalCents % parts;
@@ -31,14 +31,14 @@ export function allocateEqually(totalCents: bigint, participants: number, includ
 
 export function allocateCustom(totalCents: bigint, amounts: bigint[]): Allocation {
   if (amounts.length < 1) {
-    throw new AllocationError('Потрібен хоча б один учасник');
+    throw new AllocationError('At least one participant is required');
   }
   if (amounts.some((a) => a <= 0n)) {
-    throw new AllocationError('Кожна частка має бути більшою за нуль');
+    throw new AllocationError('Each share must be greater than zero');
   }
   const sum = amounts.reduce((a, b) => a + b, 0n);
   if (sum !== totalCents) {
-    throw new AllocationError('Сума часток має дорівнювати загальній сумі рахунку');
+    throw new AllocationError('The shares must equal the bill total');
   }
   return { shares: amounts, creatorCents: 0n };
 }
