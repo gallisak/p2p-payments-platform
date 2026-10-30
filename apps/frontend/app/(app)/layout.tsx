@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/wallets', label: 'Wallets' },
   { href: '/transfers', label: 'Transfers' },
+  { href: '/activity', label: 'Activity' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
