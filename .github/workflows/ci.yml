@@ -274,8 +274,8 @@ jobs:
       COMPOSE: docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml
     steps:
       - uses: actions/checkout@v4
-      - name: Start the services, the BFF, Jaeger, their databases and Redis
-        run: $COMPOSE up -d --build ledger-service payments-service notifications-service bff jaeger
+      - name: Start the frontend, the BFF, the services, Jaeger, their databases and Redis
+        run: $COMPOSE up -d --build frontend ledger-service payments-service notifications-service bff jaeger
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -294,7 +294,8 @@ jobs:
             p=$(curl -s -o /dev/null -w '%{http_code}' localhost:3002/transfers)
             n=$(curl -s -o /dev/null -w '%{http_code}' localhost:3003/health)
             b=$(curl -s -o /dev/null -w '%{http_code}' localhost:3004/health)
-            [ "$l" = 400 ] && [ "$p" = 401 ] && [ "$n" = 200 ] && [ "$b" = 200 ] && exit 0
+            f=$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/login)
+            [ "$l" = 400 ] && [ "$p" = 401 ] && [ "$n" = 200 ] && [ "$b" = 200 ] && [ "$f" = 200 ] && exit 0
             sleep 2
           done
           $COMPOSE ps
@@ -307,4 +308,4 @@ jobs:
         working-directory: e2e
       - name: Service logs
         if: failure()
-        run: $COMPOSE logs --no-color ledger-service payments-service notifications-service bff
+        run: $COMPOSE logs --no-color ledger-service payments-service notifications-service bff frontend
