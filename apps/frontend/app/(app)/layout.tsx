@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/wallets', label: 'Wallets' },
   { href: '/transfers', label: 'Transfers' },
+  { href: '/split-bills', label: 'Split bills' },
   { href: '/activity', label: 'Activity' },
 ];
 
