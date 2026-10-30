@@ -10,6 +10,7 @@ export interface BffApp {
   ledger: FakeUpstream;
   payments: FakeUpstream;
   notifications: FakeUpstream;
+  jaeger: FakeUpstream;
   http: () => ReturnType<typeof request>;
   reset: () => void;
   close: () => Promise<void>;
@@ -19,9 +20,11 @@ export async function createBffApp(): Promise<BffApp> {
   const ledger = new FakeUpstream();
   const payments = new FakeUpstream();
   const notifications = new FakeUpstream();
+  const jaeger = new FakeUpstream();
   process.env.LEDGER_SERVICE_URL = await ledger.start();
   process.env.PAYMENTS_SERVICE_URL = await payments.start();
   process.env.NOTIFICATIONS_SERVICE_URL = await notifications.start();
+  process.env.JAEGER_QUERY_URL = await jaeger.start();
   process.env.UPSTREAM_TIMEOUT_MS = '300';
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
@@ -33,11 +36,12 @@ export async function createBffApp(): Promise<BffApp> {
     ledger,
     payments,
     notifications,
+    jaeger,
     http: () => request(app.getHttpServer()),
-    reset: () => [ledger, payments, notifications].forEach((u) => u.reset()),
+    reset: () => [ledger, payments, notifications, jaeger].forEach((u) => u.reset()),
     close: async () => {
       await app.close();
-      await Promise.all([ledger.stop(), payments.stop(), notifications.stop()]);
+      await Promise.all([ledger.stop(), payments.stop(), notifications.stop(), jaeger.stop()]);
     },
   };
 }

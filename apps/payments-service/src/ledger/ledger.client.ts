@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CircuitBreaker, CircuitOpenError } from './circuit-breaker';
 import { LedgerRejectedError, LedgerUnavailableError } from './ledger.errors';
 import { numberEnv, requireEnv } from '../common/env';
+import { circuitRejections } from '../telemetry/metrics';
 
 export const LEDGER_CLIENT = Symbol('LEDGER_CLIENT');
 
@@ -89,6 +90,7 @@ export class LedgerClient implements LedgerPort {
       );
     } catch (err) {
       if (err instanceof CircuitOpenError) {
+        circuitRejections.inc();
         throw new LedgerUnavailableError('ledger-service circuit is open', err.retryInMs);
       }
       throw err;

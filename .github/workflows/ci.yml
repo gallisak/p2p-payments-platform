@@ -240,6 +240,7 @@ jobs:
           LEDGER_SERVICE_URL: http://localhost:3001
           PAYMENTS_SERVICE_URL: http://localhost:3002
           NOTIFICATIONS_SERVICE_URL: http://localhost:3003
+          JAEGER_QUERY_URL: http://localhost:16686
         run: |
           node dist/main > /tmp/bff.log 2>&1 &
           for i in $(seq 1 30); do
@@ -273,8 +274,8 @@ jobs:
       COMPOSE: docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml
     steps:
       - uses: actions/checkout@v4
-      - name: Start the services, the BFF, their databases and Redis
-        run: $COMPOSE up -d --build ledger-service payments-service notifications-service bff
+      - name: Start the services, the BFF, Jaeger, their databases and Redis
+        run: $COMPOSE up -d --build ledger-service payments-service notifications-service bff jaeger
       - uses: actions/setup-node@v4
         with:
           node-version: 20

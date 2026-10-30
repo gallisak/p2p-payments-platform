@@ -5,6 +5,7 @@ import { OutboxMessage } from './outbox-message.entity';
 import { EventEnvelope } from './event-envelope';
 import { Transfer } from '../transfers/entities/transfer.entity';
 import { transferView } from '../transfers/transfer-view';
+import { currentTraceparent } from '../telemetry/trace-context';
 
 export type TransferEventType =
   | 'TransferInitiated'
@@ -38,7 +39,12 @@ export class OutboxWriter {
   }
 
   async enqueueEnvelope(manager: EntityManager, event: Omit<EventEnvelope, 'eventId'>): Promise<void> {
-    const envelope: EventEnvelope = { eventId: randomUUID(), ...event };
+    const traceparent = currentTraceparent();
+    const envelope: EventEnvelope = {
+      eventId: randomUUID(),
+      ...event,
+      metadata: traceparent ? { ...event.metadata, traceparent } : event.metadata,
+    };
     await manager.save(OutboxMessage, {
       eventId: envelope.eventId,
       type: envelope.type,

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { numberEnv, requireEnv } from '../common/env';
 
-export type Upstream = 'ledger' | 'payments' | 'notifications';
+export type Service = 'ledger' | 'payments' | 'notifications';
+export type Upstream = Service | 'jaeger';
 
 export interface UpstreamRequest {
   authorization?: string;
@@ -33,6 +34,7 @@ export class UpstreamClient {
     ledger: requireEnv('LEDGER_SERVICE_URL').replace(/\/+$/, ''),
     payments: requireEnv('PAYMENTS_SERVICE_URL').replace(/\/+$/, ''),
     notifications: requireEnv('NOTIFICATIONS_SERVICE_URL').replace(/\/+$/, ''),
+    jaeger: requireEnv('JAEGER_QUERY_URL').replace(/\/+$/, ''),
   };
   private readonly timeoutMs = Math.max(1, numberEnv('UPSTREAM_TIMEOUT_MS', 5_000));
   private readonly adminTimeoutMs = Math.max(1, numberEnv('ADMIN_UPSTREAM_TIMEOUT_MS', 60_000));

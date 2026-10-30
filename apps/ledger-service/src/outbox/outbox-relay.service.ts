@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { DataSource, In, IsNull } from 'typeorm';
 import { OutboxMessage } from './outbox-message.entity';
 import { OUTBOX_REDIS } from './redis.provider';
+import { outboxPublished } from '../telemetry/metrics';
 
 const RELAY_LOCK_KEY = 7_340_002;
 const MAX_BACKOFF_MS = 5_000;
@@ -108,6 +109,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
       );
       return unpublished;
     });
+    outboxPublished.inc(claimed.length);
     return claimed.length;
   }
 

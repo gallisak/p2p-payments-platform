@@ -9,6 +9,7 @@ import { OutboxMessage } from './outbox/outbox-message.entity';
 import { SplitBill } from './split-bills/entities/split-bill.entity';
 import { SplitShare } from './split-bills/entities/split-share.entity';
 import { SplitBillsModule } from './split-bills/split-bills.module';
+import { MetricsController } from './telemetry/metrics.controller';
 
 @Module({
   imports: [
@@ -27,5 +28,6 @@ import { SplitBillsModule } from './split-bills/split-bills.module';
     TransfersModule,
     SplitBillsModule,
   ],
+  controllers: [MetricsController],
 })
 export class AppModule {}

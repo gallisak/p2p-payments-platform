@@ -79,12 +79,14 @@ describe('Admin API on Postgres (integration)', () => {
   describe('access', () => {
     it('lets the seeded admin into the admin API', async () => {
       await asAdmin('get', '/reconciliation').expect(200);
+      await asAdmin('get', '/me').expect(200, { role: 'admin' });
     });
 
     it('forbids regular users', async () => {
       const user = await account('USD', 10);
       const endpoints: ['get' | 'post', string][] = [
         ['get', `/admin/wallets/${user.walletId}/events`],
+        ['get', '/admin/me'],
         ['get', '/admin/reconciliation'],
         ['post', '/admin/projections/rebuild'],
         ['post', `/admin/wallets/${user.walletId}/block`],

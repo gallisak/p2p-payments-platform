@@ -22,6 +22,12 @@ export class LimitQueryDto {
   limit?: string;
 }
 
+export class TracesQueryDto {
+  @IsOptional()
+  @Matches(/^([1-9]|[1-4]\d|50)$/)
+  limit?: string;
+}
+
 export class PeriodQueryDto {
   @IsOptional()
   @IsString()

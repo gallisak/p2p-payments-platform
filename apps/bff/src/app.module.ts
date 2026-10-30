@@ -6,6 +6,7 @@ import { AdminController } from './api/admin.controller';
 import { AuthController } from './api/auth.controller';
 import { DashboardController } from './api/dashboard.controller';
 import { HealthController } from './api/health.controller';
+import { MetricsController } from './telemetry/metrics.controller';
 import { SplitBillsController } from './api/split-bills.controller';
 import { TransfersController } from './api/transfers.controller';
 import { WalletsController } from './api/wallets.controller';
@@ -23,6 +24,7 @@ import { UpstreamUnavailableFilter } from './upstream/upstream-unavailable.filte
     SplitBillsController,
     ActivityController,
     AdminController,
+    MetricsController,
   ],
   providers: [UpstreamClient, { provide: APP_FILTER, useClass: UpstreamUnavailableFilter }],
 })
