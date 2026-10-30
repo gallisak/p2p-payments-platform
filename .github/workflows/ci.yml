@@ -216,6 +216,39 @@ jobs:
           cat /tmp/notifications.log
           exit 1
 
+  bff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/bff
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/bff/package-lock.json
+      - run: npm ci
+      - run: npm run lint:ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: test -f dist/main.js
+      - name: Smoke test (boots and serves its OpenAPI document)
+        env:
+          PORT: 3004
+          LEDGER_SERVICE_URL: http://localhost:3001
+          PAYMENTS_SERVICE_URL: http://localhost:3002
+          NOTIFICATIONS_SERVICE_URL: http://localhost:3003
+        run: |
+          node dist/main > /tmp/bff.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' localhost:3004/docs-json) && [ "$code" = 200 ] && exit 0
+            sleep 1
+          done
+          cat /tmp/bff.log
+          exit 1
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -235,13 +268,13 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [ledger-service, payments-service, notifications-service]
+    needs: [ledger-service, payments-service, notifications-service, bff]
     env:
       COMPOSE: docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml
     steps:
       - uses: actions/checkout@v4
-      - name: Start ledger, payments and notifications with their databases and Redis
-        run: $COMPOSE up -d --build ledger-service payments-service notifications-service
+      - name: Start the services, the BFF, their databases and Redis
+        run: $COMPOSE up -d --build ledger-service payments-service notifications-service bff
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -259,7 +292,8 @@ jobs:
             l=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3001/auth/login -H 'Content-Type: application/json' -d '{}')
             p=$(curl -s -o /dev/null -w '%{http_code}' localhost:3002/transfers)
             n=$(curl -s -o /dev/null -w '%{http_code}' localhost:3003/health)
-            [ "$l" = 400 ] && [ "$p" = 401 ] && [ "$n" = 200 ] && exit 0
+            b=$(curl -s -o /dev/null -w '%{http_code}' localhost:3004/health)
+            [ "$l" = 400 ] && [ "$p" = 401 ] && [ "$n" = 200 ] && [ "$b" = 200 ] && exit 0
             sleep 2
           done
           $COMPOSE ps
@@ -272,4 +306,4 @@ jobs:
         working-directory: e2e
       - name: Service logs
         if: failure()
-        run: $COMPOSE logs --no-color ledger-service payments-service notifications-service
+        run: $COMPOSE logs --no-color ledger-service payments-service notifications-service bff

@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiSecurity } from '@nestjs/swagger';
 import { InternalApiKeyGuard } from './internal-api-key.guard';
 import { PlaceHoldDto } from './dto/place-hold.dto';
 import { CaptureHoldDto } from './dto/capture-hold.dto';
@@ -19,6 +20,7 @@ import { HoldsService } from '../wallets/holds.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { AuthService } from '../auth/auth.service';
 
+@ApiSecurity('internal-key')
 @Controller('internal')
 @UseGuards(InternalApiKeyGuard)
 export class InternalController {

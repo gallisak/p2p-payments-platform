@@ -8,6 +8,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WalletsService } from './wallets.service';
 import { DepositDto } from './dto/deposit.dto';
@@ -18,6 +19,7 @@ interface AuthenticatedRequest {
   user: { userId: string; email: string; role: string };
 }
 
+@ApiBearerAuth()
 @Controller('wallets')
 @UseGuards(JwtAuthGuard)
 export class WalletsController {

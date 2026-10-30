@@ -99,6 +99,16 @@ services:
     ports:
       - '3003:3003'
 
+  bff:
+    build: ./apps/bff
+    env_file: ./apps/bff/.env.example
+    depends_on:
+      - ledger-service
+      - payments-service
+      - notifications-service
+    ports:
+      - '3004:3004'
+
   frontend:
     build: ./apps/frontend
     env_file: ./apps/frontend/.env.example

@@ -12,6 +12,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { TransfersService } from './transfers.service';
 import { CreateTransferDto } from './dto/create-transfer.dto';
@@ -25,6 +26,7 @@ interface AuthedRequest {
   user: AuthUser;
 }
 
+@ApiBearerAuth()
 @Controller('transfers')
 @UseGuards(JwtAuthGuard)
 export class TransfersController {
