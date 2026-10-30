@@ -1,4 +1,5 @@
 import { BadRequestException, Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/jwt.strategy';
 import { InvalidCursorError, NotificationsStore } from '../store/notifications.store';
@@ -8,6 +9,7 @@ interface AuthedRequest {
   user: AuthUser;
 }
 
+@ApiBearerAuth()
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class ActivityController {

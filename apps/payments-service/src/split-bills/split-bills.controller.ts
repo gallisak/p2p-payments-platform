@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { SplitBillsService } from './split-bills.service';
 import { CreateSplitBillDto } from './dto/create-split-bill.dto';
@@ -24,6 +25,7 @@ interface AuthedRequest {
   user: AuthUser;
 }
 
+@ApiBearerAuth()
 @Controller('split-bills')
 @UseGuards(JwtAuthGuard)
 export class SplitBillsController {
