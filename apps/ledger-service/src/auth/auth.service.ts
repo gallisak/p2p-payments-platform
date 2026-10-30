@@ -85,6 +85,21 @@ export class AuthService implements OnModuleInit {
     return this.issueTokens(user, user.refreshTokenHash);
   }
 
+  async logout(refreshToken: string): Promise<void> {
+    let payload: { sub: string };
+    try {
+      payload = this.jwt.verify(refreshToken, {
+        secret: requireJwtSecret('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      return;
+    }
+    await this.users.update(
+      { id: payload.sub, refreshTokenHash: this.hashToken(refreshToken) },
+      { refreshTokenHash: null },
+    );
+  }
+
   private async issueTokens(
     user: User,
     previousHash?: string,

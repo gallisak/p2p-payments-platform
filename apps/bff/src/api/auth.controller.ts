@@ -24,4 +24,9 @@ export class AuthController {
   async refresh(@Body() dto: RefreshDto, @Res({ passthrough: true }) res: Response) {
     return relay(res, await this.upstream.request('ledger', 'POST', '/auth/refresh', { body: dto }));
   }
+
+  @Post('logout')
+  async logout(@Body() dto: RefreshDto, @Res({ passthrough: true }) res: Response) {
+    return relay(res, await this.upstream.request('ledger', 'POST', '/auth/logout', { body: dto }));
+  }
 }

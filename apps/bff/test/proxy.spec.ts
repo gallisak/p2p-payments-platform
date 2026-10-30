@@ -72,6 +72,14 @@ describe('BFF proxy', () => {
       expect(ctx.notifications.received[0].query).toEqual({ type: 'deposit', limit: '5' });
     });
 
+    it('passes a sign-out on to the ledger', async () => {
+      ctx.ledger.on('POST', '/auth/logout', { status: 204 });
+
+      await ctx.http().post('/api/auth/logout').send({ refreshToken: 'r' }).expect(204);
+
+      expect(ctx.ledger.received[0].body).toEqual({ refreshToken: 'r' });
+    });
+
     it('reads a single wallet', async () => {
       const id = randomUUID();
       ctx.ledger.on('GET', `/wallets/${id}`, { body: { id, balance: '10.00' } });

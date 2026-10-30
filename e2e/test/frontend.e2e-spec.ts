@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { FRONTEND_URL, admin, openWallet, registerUser, subjectOf, until, walletIn } from '../src/client';
+import { FRONTEND_URL, LEDGER_URL, admin, call, openWallet, registerUser, subjectOf, until, walletIn } from '../src/client';
 
 class Browser {
   private cookies = new Map<string, string>();
@@ -20,6 +20,10 @@ class Browser {
 
   private cookieHeader(): string {
     return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+
+  cookie(name: string): string | undefined {
+    return this.cookies.get(name);
   }
 
   drop(name: string): void {
@@ -81,6 +85,19 @@ describe('Frontend through the BFF (e2e)', () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => browser.fetch('/api/ws-token')));
 
     expect(results.map((r) => r.status)).toEqual(Array(8).fill(200));
+  });
+
+  it('revokes the session on sign-out and ignores sign-outs from other sites', async () => {
+    const browser = await signUp(`logout-${randomUUID()}@example.com`);
+    const stolen = browser.cookie('refreshToken');
+
+    const forged = await browser.fetch('/api/auth/logout', { method: 'POST', headers: { Origin: 'https://evil.example' } });
+    expect(forged.status).toBe(403);
+
+    const res = await browser.fetch('/api/auth/logout', { method: 'POST' });
+    expect(res.status).toBe(303);
+    const refresh = await call('POST', `${LEDGER_URL}/auth/refresh`, { body: { refreshToken: stolen } });
+    expect(refresh.status).toBe(401);
   });
 
   it('sends a transfer with its Idempotency-Key and replays it', async () => {
