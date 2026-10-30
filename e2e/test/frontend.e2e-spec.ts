@@ -139,7 +139,7 @@ describe('Frontend through the BFF (e2e)', () => {
     const browser = new Browser();
     const login = await browser.fetch('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: process.env.ADMIN_EMAIL ?? 'admin@ledger.local', password: process.env.ADMIN_PASSWORD ?? 'change-me-admin' }),
+      body: JSON.stringify({ email: process.env.ADMIN_EMAIL ?? 'admin@ledger.local', password: process.env.ADMIN_PASSWORD ?? 'dev-only-admin-password' }),
     });
     expect(token).toBeTruthy();
     expect(login.status).toBe(200);

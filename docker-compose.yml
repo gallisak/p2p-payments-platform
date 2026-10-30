@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ledger
-      POSTGRES_PASSWORD: ledger
+      POSTGRES_PASSWORD: ${LEDGER_DB_PASSWORD:-ledger}
       POSTGRES_DB: ledger
     ports:
       - '5433:5432'
@@ -19,7 +19,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: payments
-      POSTGRES_PASSWORD: payments
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:-payments}
       POSTGRES_DB: payments
     ports:
       - '5434:5432'
@@ -35,7 +35,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: notifications
-      POSTGRES_PASSWORD: notifications
+      POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications}
       POSTGRES_DB: notifications
     ports:
       - '5435:5432'
@@ -62,9 +62,22 @@ services:
 
   ledger-service:
     build: ./apps/ledger-service
-    env_file: ./apps/ledger-service/.env.example
+    env_file:
+      - path: ./apps/ledger-service/.env
+        required: false
     environment:
       DATABASE_HOST: ledger-db
+      DATABASE_PORT: '5432'
+      DATABASE_USER: ledger
+      DATABASE_PASSWORD: ${LEDGER_DB_PASSWORD:-ledger}
+      DATABASE_NAME: ledger
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-access-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ledger.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-dev-only-admin-password}
     depends_on:
       ledger-db:
         condition: service_healthy
@@ -75,7 +88,20 @@ services:
 
   payments-service:
     build: ./apps/payments-service
-    env_file: ./apps/payments-service/.env.example
+    env_file:
+      - path: ./apps/payments-service/.env
+        required: false
+    environment:
+      DATABASE_HOST: payments-db
+      DATABASE_PORT: '5432'
+      DATABASE_USER: payments
+      DATABASE_PASSWORD: ${PAYMENTS_DB_PASSWORD:-payments}
+      DATABASE_NAME: payments
+      REDIS_URL: redis://redis:6379
+      LEDGER_SERVICE_URL: http://ledger-service:3001
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-access-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
     depends_on:
       payments-db:
         condition: service_healthy
@@ -88,7 +114,18 @@ services:
 
   notifications-service:
     build: ./apps/notifications-service
-    env_file: ./apps/notifications-service/.env.example
+    env_file:
+      - path: ./apps/notifications-service/.env
+        required: false
+    environment:
+      DATABASE_HOST: notifications-db
+      DATABASE_PORT: '5432'
+      DATABASE_USER: notifications
+      DATABASE_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications}
+      DATABASE_NAME: notifications
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-access-secret}
     depends_on:
       notifications-db:
         condition: service_healthy
@@ -106,7 +143,15 @@ services:
 
   bff:
     build: ./apps/bff
-    env_file: ./apps/bff/.env.example
+    env_file:
+      - path: ./apps/bff/.env
+        required: false
+    environment:
+      LEDGER_SERVICE_URL: http://ledger-service:3001
+      PAYMENTS_SERVICE_URL: http://payments-service:3002
+      NOTIFICATIONS_SERVICE_URL: http://notifications-service:3003
+      JAEGER_QUERY_URL: http://jaeger:16686
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       - ledger-service
       - payments-service
@@ -116,7 +161,9 @@ services:
 
   frontend:
     build: ./apps/frontend
-    env_file: ./apps/frontend/.env.example
+    env_file:
+      - path: ./apps/frontend/.env
+        required: false
     environment:
       BFF_URL: http://bff:3004
     depends_on:
