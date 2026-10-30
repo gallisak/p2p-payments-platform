@@ -1,30 +1,22 @@
+import { LiveWallets } from '@/components/live-wallets';
 import { PageTitle } from '@/components/page-title';
-import { Amount, Empty, Row, RowList } from '@/components/row-list';
 import { SectionCard } from '@/components/section-card';
+import { DepositForm, OpenWalletForm } from '@/components/wallet-forms';
 import { authedFetch } from '@/lib/server-api';
-
-interface WalletView {
-  id: string;
-  currency: string;
-  balance: string;
-}
+import { Wallet } from '@/lib/types';
 
 export default async function WalletsPage() {
-  const wallets = await authedFetch<WalletView[]>('/api/wallets');
+  const wallets = await authedFetch<Wallet[]>('/api/wallets');
 
   return (
     <>
       <PageTitle>My wallets</PageTitle>
       <SectionCard title="Balances">
-        {wallets.length === 0 && <Empty>No wallets yet.</Empty>}
-        <RowList>
-          {wallets.map((w) => (
-            <Row key={w.id}>
-              <span>{w.currency}</span>
-              <Amount>{w.balance}</Amount>
-            </Row>
-          ))}
-        </RowList>
+        <LiveWallets initial={wallets} />
+      </SectionCard>
+      <SectionCard title="Manage">
+        <OpenWalletForm />
+        <DepositForm wallets={wallets} />
       </SectionCard>
     </>
   );
