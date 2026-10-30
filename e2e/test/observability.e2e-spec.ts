@@ -6,6 +6,18 @@ interface JaegerTrace {
   processes: Record<string, { serviceName: string }>;
 }
 
+const EXPECTED_OPERATIONS = [
+  'POST /api/transfers',
+  'POST /transfers',
+  'saga.check',
+  'saga.hold',
+  'saga.confirm',
+  'saga.capture',
+  'POST /internal/holds',
+  'consume HoldPlaced',
+  'consume TransferCompleted',
+];
+
 describe('Observability (e2e)', () => {
   it('follows one transfer by a single trace ID through every service and the event stream', async () => {
     const alice = await registerUser('alice');
@@ -27,11 +39,7 @@ describe('Observability (e2e)', () => {
         const res = await call<{ data?: JaegerTrace[] }>('GET', `${JAEGER_URL}/api/traces/${traceId}`);
         const found = res.body.data?.[0];
         const operations = found?.spans.map((s) => s.operationName) ?? [];
-        const complete =
-          operations.includes('saga.capture') &&
-          operations.includes('consume TransferCompleted') &&
-          operations.includes('consume HoldPlaced');
-        return complete ? found : undefined;
+        return EXPECTED_OPERATIONS.every((o) => operations.includes(o)) ? found : undefined;
       },
       20_000,
       'the whole transfer to reach Jaeger',
@@ -39,8 +47,6 @@ describe('Observability (e2e)', () => {
 
     const services = new Set(Object.values(trace.processes).map((p) => p.serviceName));
     expect([...services].sort()).toEqual(['bff', 'ledger-service', 'notifications-service', 'payments-service']);
-    const operations = trace.spans.map((s) => s.operationName);
-    expect(operations).toEqual(expect.arrayContaining(['POST /api/transfers', 'POST /transfers', 'saga.check', 'saga.hold', 'saga.confirm', 'POST /internal/holds']));
 
     const listed = await until(
       async () => {
