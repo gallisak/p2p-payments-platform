@@ -37,6 +37,23 @@ describe('BFF proxy', () => {
       expect(ctx.payments.received[0]).toMatchObject({ headers: { authorization: TOKEN, 'idempotency-key': key }, body });
     });
 
+    it('forwards the Idempotency-Key of a deposit, a withdrawal and a new split bill', async () => {
+      const id = randomUUID();
+      const key = randomUUID();
+      ctx.ledger.on('POST', `/wallets/${id}/deposit`, { status: 200, headers: { 'Idempotent-Replayed': 'true' }, body: {} });
+      ctx.ledger.on('POST', `/wallets/${id}/withdraw`, { status: 201, body: {} });
+      ctx.payments.on('POST', '/split-bills', { status: 201, body: {} });
+      const bill = { title: 'x', currency: 'USD', totalAmount: 5, dueAt: '2030-01-01', split: 'equal', participants: [{ email: 'b@example.com' }] };
+
+      const deposit = await ctx.http().post(`/api/wallets/${id}/deposit`).set('Authorization', TOKEN).set('Idempotency-Key', key).send({ amount: 5 }).expect(200);
+      await ctx.http().post(`/api/wallets/${id}/withdraw`).set('Authorization', TOKEN).set('Idempotency-Key', key).send({ amount: 5 }).expect(201);
+      await ctx.http().post('/api/split-bills').set('Authorization', TOKEN).set('Idempotency-Key', key).send(bill).expect(201);
+
+      expect(deposit.headers['idempotent-replayed']).toBe('true');
+      expect(ctx.ledger.received.map((r) => r.headers['idempotency-key'])).toEqual([key, key]);
+      expect(ctx.payments.received[0].headers['idempotency-key']).toBe(key);
+    });
+
     it('does not invent an Idempotency-Key the client did not send', async () => {
       ctx.payments.on('POST', '/transfers', { status: 400, body: { message: 'Idempotency-Key required' } });
 

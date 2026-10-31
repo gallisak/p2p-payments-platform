@@ -5,6 +5,7 @@ export type SplitBillStatus = 'pending' | 'partially_paid' | 'settled';
 @Entity('split_bills')
 @Index('IDX_split_bills_creator', ['creatorId', 'createdAt'])
 @Index('IDX_split_bills_due', ['dueAt'])
+@Index('IDX_split_bills_idempotency', ['creatorId', 'idempotencyKey'], { unique: true })
 export class SplitBill {
   @PrimaryColumn('uuid')
   id: string;
@@ -47,4 +48,10 @@ export class SplitBill {
 
   @Column('timestamptz', { nullable: true })
   settledAt: Date | null;
+
+  @Column('varchar', { length: 255, nullable: true })
+  idempotencyKey: string | null;
+
+  @Column('varchar', { length: 64, nullable: true })
+  requestHash: string | null;
 }

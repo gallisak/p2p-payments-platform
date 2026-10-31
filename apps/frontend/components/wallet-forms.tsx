@@ -33,7 +33,7 @@ export function OpenWalletForm() {
   );
 }
 
-export function DepositForm({ wallets }: { wallets: Wallet[] }) {
+export function DepositForm({ wallets, formId }: { wallets: Wallet[]; formId: string }) {
   const [result, action] = useFormState(depositMoney, INITIAL);
   const amount = useRef<HTMLInputElement>(null);
 
@@ -48,6 +48,7 @@ export function DepositForm({ wallets }: { wallets: Wallet[] }) {
   }
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="formId" value={formId} />
       <Select name="walletId" defaultValue={wallets[0].id}>
         <SelectTrigger className="w-28" aria-label="Wallet">
           <SelectValue />

@@ -2,21 +2,32 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { WalletsService } from './wallets.service';
+import { WalletOperation, WalletsService } from './wallets.service';
 import { DepositDto } from './dto/deposit.dto';
 import { WithdrawDto } from './dto/withdraw.dto';
 import { OpenWalletDto } from './dto/open-wallet.dto';
+import { optionalIdempotencyKey } from '../common/idempotency';
 
 interface AuthenticatedRequest {
   user: { userId: string; email: string; role: string };
+}
+
+function respond(res: Response, { wallet, replayed }: WalletOperation) {
+  res.status(replayed ? HttpStatus.OK : HttpStatus.CREATED);
+  res.setHeader('Idempotent-Replayed', String(replayed));
+  return wallet;
 }
 
 @ApiBearerAuth()
@@ -44,20 +55,28 @@ export class WalletsController {
   }
 
   @Post(':id/deposit')
-  deposit(
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async deposit(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: DepositDto,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.wallets.deposit(id, req.user.userId, dto.amount);
+    const key = optionalIdempotencyKey(idempotencyKey);
+    return respond(res, await this.wallets.deposit(id, req.user.userId, dto.amount, key));
   }
 
   @Post(':id/withdraw')
-  withdraw(
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async withdraw(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: WithdrawDto,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.wallets.withdraw(id, req.user.userId, dto.amount);
+    const key = optionalIdempotencyKey(idempotencyKey);
+    return respond(res, await this.wallets.withdraw(id, req.user.userId, dto.amount, key));
   }
 }

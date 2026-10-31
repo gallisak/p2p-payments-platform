@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import Link from 'next/link';
 import { PageTitle } from '@/components/page-title';
 import { Amount, Empty, Row, RowList } from '@/components/row-list';
@@ -15,7 +16,7 @@ export default async function SplitBillsPage() {
       <PageTitle>Split bills</PageTitle>
       <div className="grid gap-4 md:grid-cols-2">
         <SectionCard title="New bill">
-          <SplitBillForm />
+          <SplitBillForm formId={randomUUID()} />
         </SectionCard>
         <SectionCard title="My bills">
           {bills.length === 0 && <Empty>No bills yet.</Empty>}

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Res } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AmountDto, OpenWalletDto } from '../dto/money.dto';
 import { UpstreamClient } from '../upstream/upstream.client';
@@ -35,22 +35,32 @@ export class WalletsController {
   }
 
   @Post(':id/deposit')
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   async deposit(
     @Headers('authorization') authorization: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AmountDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    return relay(res, await this.upstream.request('ledger', 'POST', `/wallets/${id}/deposit`, { authorization, body: dto }));
+    return relay(
+      res,
+      await this.upstream.request('ledger', 'POST', `/wallets/${id}/deposit`, { authorization, idempotencyKey, body: dto }),
+    );
   }
 
   @Post(':id/withdraw')
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   async withdraw(
     @Headers('authorization') authorization: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AmountDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    return relay(res, await this.upstream.request('ledger', 'POST', `/wallets/${id}/withdraw`, { authorization, body: dto }));
+    return relay(
+      res,
+      await this.upstream.request('ledger', 'POST', `/wallets/${id}/withdraw`, { authorization, idempotencyKey, body: dto }),
+    );
   }
 }

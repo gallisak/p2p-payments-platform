@@ -254,6 +254,104 @@ describe('Wallets API on Postgres (integration)', () => {
     });
   });
 
+  describe('Idempotency-Key', () => {
+    const sendWithKey = (
+      token: string,
+      walletId: string,
+      action: 'deposit' | 'withdraw',
+      amount: number,
+      key: string,
+    ) =>
+      ctx
+        .http()
+        .post(`/wallets/${walletId}/${action}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ amount });
+    const keyOf = () => `key-${Math.random()}`;
+
+    it('applies a repeated deposit once and marks the replay', async () => {
+      const user = await ctx.registerUser();
+      const walletId = await fundedWallet(user, 0);
+      const key = keyOf();
+
+      const first = await sendWithKey(user.token, walletId, 'deposit', 25, key).expect(201);
+      const again = await sendWithKey(user.token, walletId, 'deposit', 25, key).expect(200);
+
+      expect(first.headers['idempotent-replayed']).toBe('false');
+      expect(again.headers['idempotent-replayed']).toBe('true');
+      expect(again.body.balance).toBe('25.00');
+      expect(await balanceOf(walletId)).toBe('25.00');
+    });
+
+    it('applies a repeated withdrawal once', async () => {
+      const user = await ctx.registerUser();
+      const walletId = await fundedWallet(user, 100);
+      const key = keyOf();
+
+      await sendWithKey(user.token, walletId, 'withdraw', 30, key).expect(201);
+      await sendWithKey(user.token, walletId, 'withdraw', 30, key).expect(200);
+
+      expect(await balanceOf(walletId)).toBe('70.00');
+    });
+
+    it('applies concurrent duplicates once', async () => {
+      const user = await ctx.registerUser();
+      const walletId = await fundedWallet(user, 0);
+      const key = keyOf();
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => sendWithKey(user.token, walletId, 'deposit', 10, key)),
+      );
+
+      expect(results.map((r) => r.status).sort()).toEqual([...Array(9).fill(200), 201]);
+      expect(await balanceOf(walletId)).toBe('10.00');
+    });
+
+    it('refuses a key reused for another amount, operation or wallet', async () => {
+      const user = await ctx.registerUser();
+      const usd = await fundedWallet(user, 100);
+      const eur = await fundedWallet(user, 100, 'EUR');
+      const key = keyOf();
+
+      await sendWithKey(user.token, usd, 'deposit', 10, key).expect(201);
+      await sendWithKey(user.token, usd, 'deposit', 11, key).expect(422);
+      await sendWithKey(user.token, usd, 'withdraw', 10, key).expect(422);
+      await sendWithKey(user.token, eur, 'deposit', 10, key).expect(422);
+
+      expect(await balanceOf(usd)).toBe('110.00');
+      expect(await balanceOf(eur)).toBe('100.00');
+    });
+
+    it('lets a refused withdrawal be retried with the same key', async () => {
+      const user = await ctx.registerUser();
+      const walletId = await fundedWallet(user, 5);
+      const key = keyOf();
+
+      await sendWithKey(user.token, walletId, 'withdraw', 10, key).expect(400);
+      await send(user.token, walletId, 'deposit', 10).expect(201);
+      await sendWithKey(user.token, walletId, 'withdraw', 10, key).expect(201);
+
+      expect(await balanceOf(walletId)).toBe('5.00');
+    });
+
+    it('keeps keys of different users apart', async () => {
+      const [one, two] = [await ctx.registerUser(), await ctx.registerUser()];
+      const [a, b] = [await fundedWallet(one, 0), await fundedWallet(two, 0)];
+      const key = keyOf();
+
+      await sendWithKey(one.token, a, 'deposit', 10, key).expect(201);
+      await sendWithKey(two.token, b, 'deposit', 10, key).expect(201);
+    });
+
+    it('rejects a malformed key', async () => {
+      const user = await ctx.registerUser();
+      const walletId = await fundedWallet(user, 0);
+
+      await sendWithKey(user.token, walletId, 'deposit', 10, 'not a valid key').expect(400);
+    });
+  });
+
   describe('concurrency', () => {
     it('never lets concurrent withdrawals spend more than the balance', async () => {
       const user = await ctx.registerUser();

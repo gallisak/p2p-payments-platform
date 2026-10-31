@@ -13,10 +13,11 @@ import { CURRENCIES } from '@/lib/types';
 
 const INITIAL: CreateResult = {};
 
-export function SplitBillForm() {
+export function SplitBillForm({ formId }: { formId: string }) {
   const [result, action] = useFormState(createSplitBill, INITIAL);
   return (
     <form action={action} className="grid gap-3">
+      <input type="hidden" name="formId" value={formId} />
       <div className="grid gap-1.5">
         <Label htmlFor="title">Title</Label>
         <Input id="title" name="title" maxLength={120} required />

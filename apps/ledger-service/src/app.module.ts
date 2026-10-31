@@ -9,6 +9,7 @@ import { AdminModule } from './admin/admin.module';
 import { User } from './auth/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
 import { Hold } from './wallets/entities/hold.entity';
+import { IdempotencyKey } from './wallets/entities/idempotency-key.entity';
 import { LedgerEvent } from './ledger/entities/ledger-event.entity';
 import { LedgerEntry } from './ledger/entities/ledger-entry.entity';
 import { OutboxMessage } from './outbox/outbox-message.entity';
@@ -24,7 +25,7 @@ import { MetricsController } from './telemetry/metrics.controller';
       username: process.env.DATABASE_USER,
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
-      entities: [User, Wallet, Hold, LedgerEvent, LedgerEntry, OutboxMessage],
+      entities: [User, Wallet, Hold, IdempotencyKey, LedgerEvent, LedgerEntry, OutboxMessage],
       synchronize: true, // OK for the starter repo; production code would use migrations
     }),
     AuthModule,

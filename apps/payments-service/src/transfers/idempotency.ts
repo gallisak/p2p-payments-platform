@@ -12,6 +12,10 @@ export function requireIdempotencyKey(header: string | string[] | undefined): st
   return header;
 }
 
+export function optionalIdempotencyKey(header: string | string[] | undefined): string | undefined {
+  return header === undefined ? undefined : requireIdempotencyKey(header);
+}
+
 export function requestHash(fields: Record<string, string>): string {
   const canonical = JSON.stringify(Object.keys(fields).sort().map((k) => [k, fields[k]]));
   return createHash('sha256').update(canonical).digest('hex');

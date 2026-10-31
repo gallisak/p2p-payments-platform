@@ -11,14 +11,14 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { Response } from 'express';
 import { SplitBillsService } from './split-bills.service';
 import { CreateSplitBillDto } from './dto/create-split-bill.dto';
 import { PayShareDto } from './dto/pay-share.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/jwt.strategy';
-import { requireIdempotencyKey } from '../transfers/idempotency';
+import { optionalIdempotencyKey, requireIdempotencyKey } from '../transfers/idempotency';
 import { TransfersThrottlerGuard } from '../transfers/transfers-throttler.guard';
 
 interface AuthedRequest {
@@ -32,8 +32,18 @@ export class SplitBillsController {
   constructor(private readonly bills: SplitBillsService) {}
 
   @Post()
-  create(@Req() req: AuthedRequest, @Body() dto: CreateSplitBillDto) {
-    return this.bills.create(req.user, dto);
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async create(
+    @Req() req: AuthedRequest,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: CreateSplitBillDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const key = optionalIdempotencyKey(idempotencyKey);
+    const { bill, replayed } = await this.bills.create(req.user, dto, key);
+    res.status(replayed ? HttpStatus.OK : HttpStatus.CREATED);
+    res.setHeader('Idempotent-Replayed', String(replayed));
+    return bill;
   }
 
   @Get()
