@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CircuitBreaker, CircuitOpenError } from './circuit-breaker';
-import { LedgerRejectedError, LedgerUnavailableError } from './ledger.errors';
+import { LedgerAccessDeniedError, LedgerRejectedError, LedgerUnavailableError } from './ledger.errors';
 import { numberEnv, requireEnv } from '../common/env';
 import { circuitRejections } from '../telemetry/metrics';
 
@@ -118,7 +118,7 @@ export class LedgerClient implements LedgerPort {
       throw new LedgerUnavailableError(`ledger-service responded ${res.status}`);
     }
     if (res.status === 401 || res.status === 403) {
-      throw new LedgerUnavailableError(`ledger-service refused the internal API key (${res.status})`);
+      throw new LedgerAccessDeniedError(`ledger-service refused the internal API key (${res.status})`);
     }
     throw new LedgerRejectedError(res.status, errorMessage(text) ?? `ledger-service responded ${res.status}`);
   }

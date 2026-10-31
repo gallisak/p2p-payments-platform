@@ -1,5 +1,9 @@
 import { LedgerPort } from '../ledger/ledger.client';
-import { LedgerRejectedError, LedgerUnavailableError } from '../ledger/ledger.errors';
+import {
+  LedgerAccessDeniedError,
+  LedgerRejectedError,
+  LedgerUnavailableError,
+} from '../ledger/ledger.errors';
 import { FxQuote } from '../fx/fx.service';
 import { convertCents, parseMicro } from '../fx/fx';
 import { formatCents, toCents } from '../common/money';
@@ -140,7 +144,10 @@ export class TransferSaga {
       });
     } catch (err) {
       if (err instanceof LedgerRejectedError) {
-        return { kind: 'fail', reason: holdRejection(err.status), detail: err.message };
+        const rejection = { reason: holdRejection(err.status), detail: err.message };
+        return t.attempts > 0
+          ? { kind: 'compensate', ...rejection }
+          : { kind: 'fail', ...rejection };
       }
       throw err;
     }
@@ -225,7 +232,7 @@ export class TransferSaga {
   private retry(t: Transfer, err: unknown): Transition {
     const error = err instanceof Error ? err.message : String(err);
     const attempt = t.attempts + 1;
-    if (t.status !== 'compensating' && attempt >= this.policy.maxStepAttempts) {
+    if (t.status !== 'compensating' && !isOutage(err) && attempt >= this.policy.maxStepAttempts) {
       return this.failure(t, 'ledger_unavailable', `The step failed after ${attempt} attempts: ${error}`);
     }
     const backoff = Math.min(
@@ -235,6 +242,10 @@ export class TransferSaga {
     const waitForBreaker = err instanceof LedgerUnavailableError ? err.retryInMs : 0;
     return { kind: 'retry', error, delayMs: Math.max(backoff, waitForBreaker) };
   }
+}
+
+function isOutage(err: unknown): boolean {
+  return err instanceof LedgerUnavailableError && !(err instanceof LedgerAccessDeniedError);
 }
 
 function holdRejection(status: number): FailureReason {
