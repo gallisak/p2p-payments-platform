@@ -163,6 +163,17 @@ export class NotificationsStore {
   }
 
   async purgeProcessed(olderThanMs: number): Promise<number> {
+    let purged = 0;
+    for (;;) {
+      const count = await this.purgeBatch(olderThanMs);
+      purged += count;
+      if (count < PURGE_BATCH) {
+        return purged;
+      }
+    }
+  }
+
+  private async purgeBatch(olderThanMs: number): Promise<number> {
     const [{ count }]: { count: number }[] = await this.dataSource.query(
       `WITH deleted AS (
          DELETE FROM processed_events

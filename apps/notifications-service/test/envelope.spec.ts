@@ -35,6 +35,19 @@ describe('parseEnvelope', () => {
     expect(e.recipientId).toBe('22222222-2222-4222-8222-222222222222');
   });
 
+  it('refuses an event version newer than this consumer understands', () => {
+    const newer = JSON.stringify({ ...valid, type: 'MoneyDeposited', schemaVersion: 3 });
+
+    expect(() => parseEnvelope('ledger', newer)).toThrow('MoneyDeposited v3 is newer than supported v2');
+  });
+
+  it('accepts every version it understands', () => {
+    for (const schemaVersion of [1, 2]) {
+      const raw = JSON.stringify({ ...valid, type: 'MoneyDeposited', schemaVersion });
+      expect(parseEnvelope('ledger', raw).schemaVersion).toBe(schemaVersion);
+    }
+  });
+
   it('normalizes ids to lowercase', () => {
     const raw = ledgerEnvelope({ type: 'WalletOpened' });
     const upper = { ...raw, ownerId: raw.ownerId.toUpperCase(), streamId: raw.streamId.toUpperCase() };

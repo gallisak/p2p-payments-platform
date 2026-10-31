@@ -22,6 +22,12 @@ const tracer = trace.getTracer('notifications-service');
 
 type StreamEntry = [id: string, fields: string[]];
 
+class StoreUnavailableError extends Error {
+  constructor() {
+    super('The notifications store is unavailable');
+  }
+}
+
 function fieldsOf(raw: string[]): Record<string, string> {
   const fields: Record<string, string> = {};
   for (let i = 0; i + 1 < raw.length; i += 2) {
@@ -103,6 +109,7 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
 
   async pollOnce(blockMs = this.options.blockMs): Promise<number> {
     await this.ensureConnected();
+    await this.assertStoreAvailable();
     const streams = [...this.sources.keys()];
     const result = (await this.redis.xreadgroup(
       'GROUP',
@@ -128,7 +135,7 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
 
   async reclaimOnce(): Promise<number> {
     await this.ensureConnected();
-    const storeHealthy = await this.store.ping();
+    await this.assertStoreAvailable();
     let handled = 0;
     for (const stream of this.sources.keys()) {
       const pending = (await this.redis.xpending(
@@ -142,9 +149,7 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
       )) as [id: string, consumer: string, idleMs: number, deliveries: number][];
       for (const [id, , , deliveries] of pending) {
         if (deliveries >= this.options.maxDeliveries) {
-          if (storeHealthy) {
-            await this.deadLetterPending(stream, id, deliveries);
-          }
+          await this.deadLetterPending(stream, id, deliveries);
           continue;
         }
         const claimed = (await this.redis.xclaim(
@@ -180,6 +185,10 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
       }
       eventsProcessed.inc({ source, result: 'retry' });
       this.logger.warn(`Could not process ${stream} ${id}, will retry: ${(err as Error).message}`);
+      if (!(await this.store.ping())) {
+        await this.forgetDelivery(stream, id);
+        throw new StoreUnavailableError();
+      }
       return;
     }
     await this.redis.xack(stream, this.options.group, id);
@@ -218,6 +227,25 @@ export class EventsConsumer implements OnApplicationBootstrap, OnModuleDestroy {
           span.end();
         }
       },
+    );
+  }
+
+  private async assertStoreAvailable(): Promise<void> {
+    if (!(await this.store.ping())) {
+      throw new StoreUnavailableError();
+    }
+  }
+
+  private async forgetDelivery(stream: string, id: string): Promise<void> {
+    await this.redis.xclaim(
+      stream,
+      this.options.group,
+      this.options.consumer,
+      0,
+      id,
+      'RETRYCOUNT',
+      0,
+      'JUSTID',
     );
   }
 
