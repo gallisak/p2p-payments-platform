@@ -1,6 +1,6 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { CredentialsDto, RefreshDto } from '../dto/auth.dto';
 import { UpstreamClient } from '../upstream/upstream.client';
 import { relay } from '../upstream/relay';
@@ -16,8 +16,8 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() dto: CredentialsDto, @Res({ passthrough: true }) res: Response) {
-    return relay(res, await this.upstream.request('ledger', 'POST', '/auth/login', { body: dto }));
+  async login(@Body() dto: CredentialsDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return relay(res, await this.upstream.request('ledger', 'POST', '/auth/login', { body: dto, clientIp: req.ip }));
   }
 
   @Post('refresh')

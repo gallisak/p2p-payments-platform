@@ -20,6 +20,12 @@ import { AdminSeeder } from './admin.seeder';
           ttl: Number(process.env.LOGIN_RATE_LIMIT_TTL_MS ?? 60_000),
           limit: Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 5),
         },
+        {
+          name: 'client',
+          ttl: Number(process.env.LOGIN_RATE_LIMIT_TTL_MS ?? 60_000),
+          limit: Number(process.env.LOGIN_IP_RATE_LIMIT_MAX ?? 30),
+          getTracker: (req: Record<string, unknown>) => String(req.ip),
+        },
       ],
     }),
   ],

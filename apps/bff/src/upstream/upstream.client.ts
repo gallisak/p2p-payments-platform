@@ -7,6 +7,7 @@ export type Upstream = Service | 'jaeger';
 export interface UpstreamRequest {
   authorization?: string;
   idempotencyKey?: string;
+  clientIp?: string;
   body?: unknown;
   query?: Record<string, string | undefined>;
   slow?: boolean;
@@ -60,6 +61,9 @@ export class UpstreamClient {
     }
     if (options.idempotencyKey !== undefined) {
       headers['Idempotency-Key'] = options.idempotencyKey;
+    }
+    if (options.clientIp !== undefined) {
+      headers['X-Forwarded-For'] = options.clientIp;
     }
     let res: Response;
     let text: string;

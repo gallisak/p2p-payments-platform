@@ -54,6 +54,21 @@ describe('BFF proxy', () => {
       expect(ctx.payments.received[0].headers['idempotency-key']).toBe(key);
     });
 
+    it('tells the ledger which client is logging in and ignores a forged address', async () => {
+      ctx.ledger.on('POST', '/auth/login', { status: 201, body: {} });
+
+      await ctx
+        .http()
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', '203.0.113.9')
+        .send({ email: 'a@example.com', password: 'p' })
+        .expect(201);
+
+      const forwarded = ctx.ledger.received[0].headers['x-forwarded-for'];
+      expect(forwarded).toBeDefined();
+      expect(forwarded).not.toContain('203.0.113.9');
+    });
+
     it('does not invent an Idempotency-Key the client did not send', async () => {
       ctx.payments.on('POST', '/transfers', { status: 400, body: { message: 'Idempotency-Key required' } });
 
