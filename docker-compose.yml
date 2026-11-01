@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${LEDGER_DB_PASSWORD:-ledger}
       POSTGRES_DB: ledger
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - ledger-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
       POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:-payments}
       POSTGRES_DB: payments
     ports:
-      - '5434:5432'
+      - '127.0.0.1:5434:5432'
     volumes:
       - payments-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +38,7 @@ services:
       POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications}
       POSTGRES_DB: notifications
     ports:
-      - '5435:5432'
+      - '127.0.0.1:5435:5432'
     volumes:
       - notifications-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -84,7 +84,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
 
   payments-service:
     build: ./apps/payments-service
@@ -110,7 +110,7 @@ services:
       ledger-service:
         condition: service_started
     ports:
-      - '3002:3002'
+      - '127.0.0.1:3002:3002'
 
   notifications-service:
     build: ./apps/notifications-service
@@ -132,7 +132,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - '3003:3003'
+      - '127.0.0.1:3003:3003'
 
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
@@ -157,7 +157,7 @@ services:
       - payments-service
       - notifications-service
     ports:
-      - '3004:3004'
+      - '127.0.0.1:3004:3004'
 
   frontend:
     build: ./apps/frontend
@@ -169,7 +169,7 @@ services:
     depends_on:
       - bff
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
 
 volumes:
   ledger-db-data:
