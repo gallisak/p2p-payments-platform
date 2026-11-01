@@ -4,6 +4,7 @@ export interface Wallet {
   balance: string;
   held: string;
   blocked: boolean;
+  version: number;
 }
 
 export interface Transfer {

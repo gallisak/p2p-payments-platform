@@ -1,3 +1,4 @@
+import { isRedirectError } from 'next/dist/client/components/redirect';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { FormError } from '@/components/form-error';
@@ -43,7 +44,10 @@ async function ReconciliationSection() {
   let report: Reconciliation;
   try {
     report = await authedFetch<Reconciliation>('/api/admin/reconciliation');
-  } catch {
+  } catch (err) {
+    if (isRedirectError(err)) {
+      throw err;
+    }
     return <FormError>Could not load the reconciliation report.</FormError>;
   }
   return (
@@ -89,7 +93,10 @@ async function TracesSection() {
   let traces: TraceSummary[];
   try {
     traces = await authedFetch<TraceSummary[]>('/api/admin/traces?limit=10');
-  } catch {
+  } catch (err) {
+    if (isRedirectError(err)) {
+      throw err;
+    }
     return <FormError>Traces are temporarily unavailable.</FormError>;
   }
   if (traces.length === 0) {
@@ -145,6 +152,9 @@ async function EventLog({ walletId }: { walletId: string }) {
   try {
     events = await authedFetch<LedgerEvent[]>(`/api/admin/wallets/${walletId}/events`);
   } catch (err) {
+    if (isRedirectError(err)) {
+      throw err;
+    }
     const missing = err instanceof BffApiError && err.status === 404;
     return <FormError>{missing ? 'Wallet not found.' : 'Could not load the event log.'}</FormError>;
   }

@@ -1,4 +1,4 @@
-import { ActivityItem, Transfer } from './types';
+import { ActivityItem, Transfer, Wallet } from './types';
 
 export interface LiveWallet {
   walletId: string;
@@ -34,6 +34,18 @@ const MAX_ACTIVITY = 100;
 
 function newer<T extends { streamVersion: number }>(current: T | undefined, incoming: T): T {
   return current && current.streamVersion >= incoming.streamVersion ? current : incoming;
+}
+
+export function latestWallet(wallet: Wallet, live: LiveWallet | undefined): Wallet {
+  if (!live || live.streamVersion < wallet.version) {
+    return wallet;
+  }
+  const { balance, held, blocked, streamVersion } = live;
+  return { ...wallet, balance, held, blocked, version: streamVersion };
+}
+
+export function latestTransfer(transfer: Transfer, live: LiveTransfer | undefined): Transfer {
+  return live && live.transfer.updatedAt >= transfer.updatedAt ? live.transfer : transfer;
 }
 
 export function withWallet(state: RealtimeState, wallet: LiveWallet): RealtimeState {

@@ -4,7 +4,14 @@ import { REFRESH_COOKIE, withoutSession } from '@/lib/session';
 
 function isCrossSite(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
-  return origin !== null && new URL(origin).host !== req.headers.get('host');
+  if (origin === null) {
+    return false;
+  }
+  try {
+    return new URL(origin).host !== req.headers.get('host');
+  } catch {
+    return true;
+  }
 }
 
 export async function POST(req: NextRequest) {

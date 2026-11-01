@@ -69,7 +69,22 @@ describe('Frontend through the BFF (e2e)', () => {
 
     const res = await browser.fetch('/admin');
 
-    expect(await res.text()).not.toContain('Reconciliation');
+    const page = await res.text();
+    expect(res.status).toBe(200);
+    expect(page).toContain('content="1;url=/dashboard"');
+    expect(page).not.toContain('Reconciliation');
+  });
+
+  it('sends an admin whose token the services refuse to the login page', async () => {
+    const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const forged = `${part({ alg: 'HS256' })}.${part({ sub: randomUUID(), role: 'admin', exp: Date.now() / 1000 + 600 })}.bad`;
+
+    const res = await fetch(`${FRONTEND_URL}/admin`, { redirect: 'manual', headers: { cookie: `accessToken=${forged}` } });
+    const page = await res.text();
+
+    expect(page).toContain('NEXT_REDIRECT');
+    expect(page).toContain('/login');
+    expect(page).not.toContain('Could not load the reconciliation report');
   });
 
   it('renews an expired access token from the refresh cookie', async () => {
@@ -97,6 +112,8 @@ describe('Frontend through the BFF (e2e)', () => {
 
     const forged = await browser.fetch('/api/auth/logout', { method: 'POST', headers: { Origin: 'https://evil.example' } });
     expect(forged.status).toBe(403);
+    const opaque = await browser.fetch('/api/auth/logout', { method: 'POST', headers: { Origin: 'null' } });
+    expect(opaque.status).toBe(403);
 
     const res = await browser.fetch('/api/auth/logout', { method: 'POST' });
     expect(res.status).toBe(303);
