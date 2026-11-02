@@ -10,9 +10,13 @@ export async function POST(req: NextRequest) {
   }
   try {
     const clientIp = req.headers.get('x-forwarded-for');
+    const proxySecret = process.env.PROXY_SECRET;
     const tokens: TokenPair = await bffFetch<TokenPair>('/api/auth/login', {
       method: 'POST',
-      headers: clientIp ? { 'X-Forwarded-For': clientIp } : undefined,
+      headers: {
+        ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}),
+        ...(proxySecret ? { 'X-Proxy-Secret': proxySecret } : {}),
+      },
       body: JSON.stringify(body),
     });
     return withSession(req, NextResponse.json({ ok: true }), tokens);

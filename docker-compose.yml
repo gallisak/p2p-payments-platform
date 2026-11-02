@@ -79,6 +79,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ledger.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-dev-only-admin-password}
       TRUST_PROXY: uniquelocal
+      PROXY_SECRET: ${PROXY_SECRET:-dev-only-proxy-secret}
     depends_on:
       ledger-db:
         condition: service_healthy
@@ -153,6 +154,7 @@ services:
       NOTIFICATIONS_SERVICE_URL: http://notifications-service:3003
       JAEGER_QUERY_URL: http://jaeger:16686
       TRUST_PROXY: uniquelocal
+      PROXY_SECRET: ${PROXY_SECRET:-dev-only-proxy-secret}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       - ledger-service
@@ -168,6 +170,7 @@ services:
         required: false
     environment:
       BFF_URL: http://bff:3004
+      PROXY_SECRET: ${PROXY_SECRET:-dev-only-proxy-secret}
     depends_on:
       - bff
     ports:

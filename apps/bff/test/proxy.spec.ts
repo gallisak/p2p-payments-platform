@@ -69,6 +69,19 @@ describe('BFF proxy', () => {
       expect(forwarded).not.toContain('203.0.113.9');
     });
 
+    it('proves itself to the ledger with the proxy secret only when one is configured', async () => {
+      ctx.ledger.on('POST', '/auth/login', { status: 201, body: {} });
+      const body = { email: 'a@example.com', password: 'p' };
+
+      await ctx.http().post('/api/auth/login').send(body).expect(201);
+      process.env.PROXY_SECRET = 'proxy-secret';
+      await ctx.http().post('/api/auth/login').send(body).expect(201);
+      delete process.env.PROXY_SECRET;
+
+      expect(ctx.ledger.received[0].headers['x-proxy-secret']).toBeUndefined();
+      expect(ctx.ledger.received[1].headers['x-proxy-secret']).toBe('proxy-secret');
+    });
+
     it('does not invent an Idempotency-Key the client did not send', async () => {
       ctx.payments.on('POST', '/transfers', { status: 400, body: { message: 'Idempotency-Key required' } });
 
