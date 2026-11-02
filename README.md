@@ -196,7 +196,8 @@ a squash would join the tests and the fixes again.
 | `daf00a9` | problem 5 | pass | pass | pass |
 
 At `e1f266d`, 20 concurrent withdrawals of 10 from a balance of 100 all succeed, and
-20 concurrent deposits of 0.10 leave 0.30 instead of 2.00.
+20 concurrent deposits of 0.10 leave far less than the expected 2.00. The exact result
+changes from run to run because this is a race.
 
 To reproduce it locally, check out a commit from the table and run:
 
