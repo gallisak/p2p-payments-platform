@@ -89,6 +89,24 @@ describe('Reconciliation cross-checks on Postgres (integration)', () => {
     ]);
   });
 
+  it('skips ledger entries of an account whose id is not a wallet id', async () => {
+    const operationId = randomUUID();
+    await post(operationId, 'not-a-wallet', 5);
+    await post(operationId, 'external:USD', -5);
+
+    const { body } = await asAdmin('post', '/projections/rebuild').expect(201);
+
+    expect(body).toEqual({
+      rebuilt: [],
+      skipped: [
+        {
+          walletId: 'not-a-wallet',
+          issues: ['ledger entries point to an account with no events'],
+        },
+      ],
+    });
+  });
+
   it('reports a hold mismatch as unresolved instead of claiming a rebuild', async () => {
     const user = await funded(100);
     const holdId = randomUUID();

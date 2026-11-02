@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { isUUID } from 'class-validator';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { LedgerEvent } from '../ledger/entities/ledger-event.entity';
@@ -104,6 +105,10 @@ export class ReconciliationService {
     const rebuilt: string[] = [];
     const skipped: { walletId: string; issues: string[] }[] = [];
     for (const { walletId, issues: found } of mismatches) {
+      if (!isUUID(walletId)) {
+        skipped.push({ walletId, issues: found });
+        continue;
+      }
       const issues = await this.dataSource.transaction(async (manager) => {
         const wallet = await manager.findOne(Wallet, {
           where: { id: walletId },
