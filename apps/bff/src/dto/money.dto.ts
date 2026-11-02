@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsNumber, IsPositive, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export const CURRENCIES = ['USD', 'EUR', 'UAH'] as const;
@@ -21,10 +22,16 @@ export class CreateTransferDto {
   @MaxLength(254)
   toWalletIdentifier: string;
 
+  @ApiProperty({ description: "Amount debited, in the currency of the sender's wallet (fromWalletId)", example: 100 })
   @IsNumber()
   @IsPositive()
   amount: number;
 
+  @ApiProperty({
+    description: "Recipient's currency. If it differs from the sender's wallet, the amount is converted at the current rate",
+    enum: CURRENCIES,
+    example: 'EUR',
+  })
   @IsIn(CURRENCIES)
   currency: string;
 }
