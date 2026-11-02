@@ -1,5 +1,52 @@
 import { randomUUID } from 'crypto';
-import { BFF_URL, LEDGER_URL, NOTIFICATIONS_URL, PAYMENTS_URL, call, until } from '../src/client';
+import { BFF_URL, LEDGER_URL, NOTIFICATIONS_URL, PAYMENTS_URL, call, openWallet, registerUser, until } from '../src/client';
+
+describe('Idempotent money movements through the BFF (e2e)', () => {
+  it('applies a repeated deposit and withdrawal once', async () => {
+    const user = await registerUser('idem');
+    const walletId = await openWallet(user, 'USD');
+    const send = (action: string, key: string, amount: number) =>
+      call('POST', `${BFF_URL}/api/wallets/${walletId}/${action}`, {
+        token: user.token,
+        headers: { 'Idempotency-Key': key },
+        body: { amount },
+      });
+    const [depositKey, withdrawKey] = [randomUUID(), randomUUID()];
+
+    expect((await send('deposit', depositKey, 50)).status).toBe(201);
+    const replay = await send('deposit', depositKey, 50);
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('idempotent-replayed')).toBe('true');
+    expect((await send('withdraw', withdrawKey, 20)).status).toBe(201);
+    expect((await send('withdraw', withdrawKey, 20)).status).toBe(200);
+
+    const wallet = await call('GET', `${BFF_URL}/api/wallets/${walletId}`, { token: user.token });
+    expect(wallet.body.balance).toBe('30.00');
+  });
+
+  it('creates a split bill once for a repeated request', async () => {
+    const creator = await registerUser('creator');
+    const guest = await registerUser('guest');
+    await openWallet(guest, 'USD');
+    const key = randomUUID();
+    const body = {
+      title: 'Dinner',
+      currency: 'USD',
+      totalAmount: 30,
+      dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+      split: 'equal',
+      participants: [{ email: guest.email }],
+    };
+    const send = () =>
+      call('POST', `${BFF_URL}/api/split-bills`, { token: creator.token, headers: { 'Idempotency-Key': key }, body });
+
+    const first = await send();
+    const again = await send();
+
+    expect([first.status, again.status]).toEqual([201, 200]);
+    expect(again.body.id).toBe(first.body.id);
+  });
+});
 
 describe('Frontend API through the BFF (e2e)', () => {
   it('signs up, funds a wallet, sends a transfer and shows it all on one dashboard', async () => {

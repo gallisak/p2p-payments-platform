@@ -14,6 +14,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { requireJwtSecret } from './jwt-secrets';
 import { normalizeEmail } from './email';
+import { isUniqueViolation } from '../common/db-errors';
 
 interface TokenPair {
   accessToken: string;
@@ -39,9 +40,15 @@ export class AuthService implements OnModuleInit {
       throw new ConflictException('Email is already registered');
     }
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.users.save(
-      this.users.create({ email, passwordHash }),
-    );
+    let user: User;
+    try {
+      user = await this.users.save(this.users.create({ email, passwordHash }));
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException('Email is already registered');
+      }
+      throw err;
+    }
     return this.issueTokens(user);
   }
 

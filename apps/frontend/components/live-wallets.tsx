@@ -3,19 +3,24 @@
 import { useRealtime } from './realtime-provider';
 import { Amount, Empty, Row, RowList } from './row-list';
 import { Badge } from '@/components/ui/badge';
+import { latestWallet } from '@/lib/realtime-state';
 import { Wallet } from '@/lib/types';
 
 export function LiveWallets({ initial }: { initial: Wallet[] }) {
   const { wallets: live } = useRealtime();
   const known = new Set(initial.map((w) => w.id));
   const wallets: Wallet[] = [
-    ...initial.map((w) => {
-      const update = live[w.id];
-      return update ? { ...w, balance: update.balance, held: update.held, blocked: update.blocked } : w;
-    }),
+    ...initial.map((w) => latestWallet(w, live[w.id])),
     ...Object.values(live)
       .filter((w) => !known.has(w.walletId))
-      .map(({ walletId, currency, balance, held, blocked }) => ({ id: walletId, currency, balance, held, blocked })),
+      .map(({ walletId, currency, balance, held, blocked, streamVersion }) => ({
+        id: walletId,
+        currency,
+        balance,
+        held,
+        blocked,
+        version: streamVersion,
+      })),
   ];
 
   if (wallets.length === 0) {

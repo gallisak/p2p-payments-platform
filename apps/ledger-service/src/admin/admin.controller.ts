@@ -17,6 +17,9 @@ import { DataSource } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { EventStore } from '../ledger/event-store.service';
+import { LedgerEvent } from '../ledger/entities/ledger-event.entity';
+import { StoredEvent } from '../ledger/ledger-events';
+import { upcast } from '../ledger/upcasters';
 import { WalletsService } from '../wallets/wallets.service';
 import { ReconciliationService } from './reconciliation.service';
 import { BlockWalletDto } from './dto/block-wallet.dto';
@@ -24,6 +27,14 @@ import { ReconciliationQueryDto } from './dto/reconciliation-query.dto';
 
 interface AuthenticatedRequest {
   user: { userId: string };
+}
+
+function currentPayload(event: LedgerEvent): unknown {
+  try {
+    return upcast(event as unknown as StoredEvent).payload;
+  } catch {
+    return event.payload;
+  }
 }
 
 @ApiBearerAuth()
@@ -54,7 +65,7 @@ export class AdminController {
       streamVersion: e.streamVersion,
       type: e.type,
       schemaVersion: e.schemaVersion,
-      payload: e.payload,
+      payload: currentPayload(e),
       metadata: e.metadata,
       occurredAt: e.occurredAt,
     }));
@@ -71,8 +82,8 @@ export class AdminController {
   }
 
   @Post('projections/rebuild')
-  rebuild() {
-    return this.reconciliation.rebuild();
+  rebuild(@Request() req: AuthenticatedRequest) {
+    return this.reconciliation.rebuild(req.user.userId);
   }
 
   @Post('wallets/:id/block')

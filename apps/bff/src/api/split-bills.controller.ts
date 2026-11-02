@@ -13,12 +13,14 @@ export class SplitBillsController {
   constructor(private readonly upstream: UpstreamClient) {}
 
   @Post()
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   async create(
     @Headers('authorization') authorization: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CreateSplitBillDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    return relay(res, await this.upstream.request('payments', 'POST', '/split-bills', { authorization, body: dto }));
+    return relay(res, await this.upstream.request('payments', 'POST', '/split-bills', { authorization, idempotencyKey, body: dto }));
   }
 
   @Get()

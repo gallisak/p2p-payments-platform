@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -20,6 +21,8 @@ import { Currency } from '../common/currencies';
 import { LEDGER_CLIENT, LedgerPort } from '../ledger/ledger.client';
 import { LedgerRejectedError, LedgerUnavailableError } from '../ledger/ledger.errors';
 import { TransfersService } from '../transfers/transfers.service';
+import { requestHash } from '../transfers/idempotency';
+import { isUniqueViolation } from '../common/db-errors';
 import { FxService } from '../fx/fx.service';
 import { convertCents, parseMicro } from '../fx/fx';
 import { sagaPolicyFromEnv } from '../saga/saga-policy';
@@ -27,6 +30,20 @@ import { AuthUser } from '../auth/jwt.strategy';
 
 const MAX_DUE_MS = 365 * 24 * 3_600_000;
 const LIST_LIMIT = 50;
+
+function billRequestHash(dto: CreateSplitBillDto): string {
+  return requestHash({
+    title: dto.title.trim(),
+    currency: dto.currency,
+    totalAmount: String(dto.totalAmount),
+    dueAt: dto.dueAt,
+    split: dto.split,
+    includeCreator: String(dto.includeCreator === true),
+    participants: JSON.stringify(
+      dto.participants.map((p) => [p.email.trim().toLowerCase(), p.amount ?? null]),
+    ),
+  });
+}
 
 @Injectable()
 export class SplitBillsService {
@@ -40,7 +57,16 @@ export class SplitBillsService {
 
   private readonly maxTransferUsdCents = sagaPolicyFromEnv().maxTransferUsdCents;
 
-  async create(user: AuthUser, dto: CreateSplitBillDto) {
+  async create(user: AuthUser, dto: CreateSplitBillDto, idempotencyKey?: string) {
+    const hash = idempotencyKey ? billRequestHash(dto) : null;
+    if (idempotencyKey) {
+      const known = await this.dataSource
+        .getRepository(SplitBill)
+        .findOne({ where: { creatorId: user.userId, idempotencyKey } });
+      if (known) {
+        return this.replay(user.userId, known, hash);
+      }
+    }
     const creatorEmail = user.email.trim().toLowerCase();
     const emails = dto.participants.map((p) => p.email.trim().toLowerCase());
     if (new Set(emails).size !== emails.length) {
@@ -86,7 +112,7 @@ export class SplitBillsService {
     }
 
     const billId = randomUUID();
-    const { bill, shares } = await this.dataSource.transaction(async (manager) => {
+    const write = this.dataSource.transaction(async (manager) => {
       const bill = await manager.save(
         manager.create(SplitBill, {
           id: billId,
@@ -101,6 +127,8 @@ export class SplitBillsService {
           status: 'pending',
           version: 1,
           settledAt: null,
+          idempotencyKey: idempotencyKey ?? null,
+          requestHash: hash,
         }),
       );
       const shares = await manager.save(
@@ -122,7 +150,25 @@ export class SplitBillsService {
       await this.store.emit(manager, 'SplitBillCreated', bill, { bill: billView(bill, shares) });
       return { bill, shares };
     });
-    return billView(bill, shares);
+    try {
+      const { bill, shares } = await write;
+      return { bill: billView(bill, shares), replayed: false };
+    } catch (err) {
+      if (!idempotencyKey || !isUniqueViolation(err)) {
+        throw err;
+      }
+      const winner = await this.dataSource
+        .getRepository(SplitBill)
+        .findOneByOrFail({ creatorId: user.userId, idempotencyKey });
+      return this.replay(user.userId, winner, hash);
+    }
+  }
+
+  private async replay(userId: string, known: SplitBill, hash: string | null) {
+    if (known.requestHash !== hash) {
+      throw new UnprocessableEntityException('Idempotency-Key was already used for a different request');
+    }
+    return { bill: await this.get(userId, known.id), replayed: true };
   }
 
   async list(userId: string) {

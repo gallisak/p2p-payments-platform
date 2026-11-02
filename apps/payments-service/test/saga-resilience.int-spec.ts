@@ -10,7 +10,6 @@ describe('Saga resilience (integration)', () => {
 
     beforeAll(async () => {
       ctx = await createPaymentsApp({
-        SAGA_MAX_STEP_ATTEMPTS: '1000',
         SAGA_RETRY_MAX_MS: '100',
         LEDGER_BREAKER_FAILURES: '3',
         LEDGER_BREAKER_OPEN_MS: '300',
@@ -32,6 +31,13 @@ describe('Saga resilience (integration)', () => {
 
       expect(waiting).toMatchObject({ status: 'pending', awaitingRetry: true });
       expect(waiting.lastError).toMatch(/503|circuit/);
+
+      await sleep(1_500);
+      const steps = await ctx.dataSource.getRepository(SagaStep).countBy({ transferId: res.body.id });
+      expect(steps).toBeGreaterThan(5);
+      expect(
+        (await ctx.dataSource.getRepository(Transfer).findOneByOrFail({ id: res.body.id })).status,
+      ).toBe('pending');
 
       ctx.ledger.down = false;
       const done = await ctx.settle(from.token, res.body.id);
@@ -86,21 +92,7 @@ describe('Saga resilience (integration)', () => {
     afterEach(() => ctx.ledger.reset());
     afterAll(() => ctx.close());
 
-    it('fails a transfer that never reached the ledger', async () => {
-      const from = await ctx.account('USD', '100');
-      const to = await ctx.account('USD');
-      ctx.ledger.down = true;
-
-      const res = await ctx
-        .transfer(from, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' })
-        .expect(202);
-      const done = await ctx.settle(from.token, res.body.id);
-
-      expect(done).toMatchObject({ status: 'failed', failureReason: 'ledger_unavailable' });
-      expect(ctx.ledger.calls).toHaveLength(3);
-    });
-
-    it('retries instead of failing when the ledger refuses the internal API key', async () => {
+    it('stops after the attempt limit when the ledger refuses the internal API key', async () => {
       const from = await ctx.account('USD', '100');
       const to = await ctx.account('USD');
       ctx.ledger.intercept(async () => 401);
@@ -113,6 +105,54 @@ describe('Saga resilience (integration)', () => {
       expect(done).toMatchObject({ status: 'failed', failureReason: 'ledger_unavailable' });
       expect(done.failureDetail).toContain('internal API key');
       expect(ctx.ledger.calls).toHaveLength(3);
+    });
+
+    it('voids the hold when a retry is refused while the first placement is still in flight', async () => {
+      const from = await ctx.account('USD', '100');
+      const to = await ctx.account('USD');
+      const pending: (() => void)[] = [];
+      let placements = 0;
+      ctx.ledger.intercept(async (call) => {
+        if (call.op === 'place' && ++placements === 1) {
+          await new Promise<void>((resolve) => pending.push(resolve));
+        }
+        return call.op === 'place' && placements === 2 ? 400 : undefined;
+      });
+
+      const res = await ctx
+        .transfer(from, { toWalletIdentifier: to.email, amount: 40, currency: 'USD' })
+        .expect(202);
+      const done = await ctx.settle(from.token, res.body.id);
+      pending.forEach((resume) => resume());
+      await sleep(100);
+
+      expect(done).toMatchObject({ status: 'failed', failureReason: 'insufficient_funds' });
+      expect(ctx.ledger.holds.get(res.body.id)?.status).toBe('voided');
+      expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '100.00', held: '0.00' });
+    });
+  });
+
+  describe('stuck sagas', () => {
+    let ctx: PaymentsApp;
+
+    beforeAll(async () => {
+      ctx = await createPaymentsApp({ SAGA_TIMEOUT_MS: '1500' });
+    });
+
+    afterEach(() => ctx.ledger.reset());
+    afterAll(() => ctx.close());
+
+    it('fails a transfer that never reached the ledger once its deadline passes', async () => {
+      const from = await ctx.account('USD', '100');
+      const to = await ctx.account('USD');
+      ctx.ledger.down = true;
+
+      const res = await ctx
+        .transfer(from, { toWalletIdentifier: to.email, amount: 1, currency: 'USD' })
+        .expect(202);
+      const done = await ctx.settle(from.token, res.body.id);
+
+      expect(done).toMatchObject({ status: 'failed', failureReason: 'timed_out' });
     });
 
     it('voids a hold whose placement timed out so that the late placement reserves nothing', async () => {
@@ -132,21 +172,28 @@ describe('Saga resilience (integration)', () => {
       pending.forEach((resume) => resume());
       await sleep(100);
 
-      expect(done).toMatchObject({ status: 'failed', failureReason: 'ledger_unavailable' });
+      expect(done).toMatchObject({ status: 'failed', failureReason: 'timed_out' });
       expect(ctx.ledger.holds.get(res.body.id)?.status).toBe('voided');
       expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '100.00', held: '0.00' });
     });
-  });
 
-  describe('stuck sagas', () => {
-    let ctx: PaymentsApp;
+    it('completes instead of failing when a timed-out capture actually went through', async () => {
+      const from = await ctx.account('USD', '100');
+      const to = await ctx.account('USD');
+      ctx.ledger.responseDelayMs.capture = 800;
+      const res = await ctx
+        .transfer(from, { toWalletIdentifier: to.email, amount: 30, currency: 'USD' })
+        .expect(202);
 
-    beforeAll(async () => {
-      ctx = await createPaymentsApp({ SAGA_TIMEOUT_MS: '1500', SAGA_MAX_STEP_ATTEMPTS: '1000' });
+      const done = await ctx.settle(from.token, res.body.id);
+
+      expect(done).toMatchObject({ status: 'completed', failureReason: null });
+      const steps = done.steps as { step: string; outcome: string }[];
+      expect(steps.filter((s) => s.step === 'capture').map((s) => s.outcome)).toContain('retry');
+      expect(steps.at(-1)).toMatchObject({ step: 'compensate', outcome: 'succeeded' });
+      expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '70.00', held: '0.00' });
+      expect(ctx.ledger.balances(to.walletId).balance).toBe('30.00');
     });
-
-    afterEach(() => ctx.ledger.reset());
-    afterAll(() => ctx.close());
 
     it('compensates a saga that cannot finish before its deadline', async () => {
       const from = await ctx.account('USD', '100');
@@ -168,7 +215,7 @@ describe('Saga resilience (integration)', () => {
     let ctx: PaymentsApp;
 
     beforeAll(async () => {
-      ctx = await createPaymentsApp({ SAGA_MAX_STEP_ATTEMPTS: '1000' });
+      ctx = await createPaymentsApp();
     });
 
     afterEach(() => ctx.ledger.reset());
@@ -366,7 +413,6 @@ describe('Saga resilience (integration)', () => {
       ctx = await createPaymentsApp({
         FX_QUOTE_TTL_MS: '1500',
         FX_CACHE_TTL_MS: '0',
-        SAGA_MAX_STEP_ATTEMPTS: '1000',
         LEDGER_BREAKER_FAILURES: '1000',
       });
     });

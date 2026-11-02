@@ -3,6 +3,7 @@
 import { useRealtime } from './realtime-provider';
 import { Amount, Empty, Row, RowList } from './row-list';
 import { Badge } from '@/components/ui/badge';
+import { latestTransfer } from '@/lib/realtime-state';
 import { STATUS_TEXT, failureText } from '@/lib/transfer-text';
 import { Transfer } from '@/lib/types';
 
@@ -23,8 +24,9 @@ function StatusBadge({ status }: { status: string }) {
 export function LiveTransfers({ initial }: { initial: Transfer[] }) {
   const { transfers: live } = useRealtime();
   const merged = new Map(initial.map((t) => [t.id, t]));
-  for (const { transfer } of Object.values(live)) {
-    merged.set(transfer.id, transfer);
+  for (const update of Object.values(live)) {
+    const known = merged.get(update.transfer.id);
+    merged.set(update.transfer.id, known ? latestTransfer(known, update) : update.transfer);
   }
   const transfers = [...merged.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, LIMIT);
 

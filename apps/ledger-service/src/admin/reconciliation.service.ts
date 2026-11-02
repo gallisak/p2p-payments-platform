@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { isUUID } from 'class-validator';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { LedgerEvent } from '../ledger/entities/ledger-event.entity';
 import { StoredEvent } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
 import { StreamCheck, checkStream } from '../ledger/stream-check';
+import { WalletLedger } from '../wallets/wallet-ledger.service';
 
 const BATCH_SIZE = 500;
 
@@ -47,6 +49,15 @@ function rebuiltView(check: StreamCheck): ProjectionView {
   };
 }
 
+function isStale(wallet: Wallet, check: StreamCheck): boolean {
+  return (
+    toCents(wallet.balance) !== check.state.balance ||
+    toCents(wallet.held) !== check.state.held ||
+    wallet.blocked !== check.state.blocked ||
+    wallet.version !== check.version
+  );
+}
+
 function storedView(wallet: Wallet): ProjectionView {
   return {
     balance: wallet.balance,
@@ -58,7 +69,10 @@ function storedView(wallet: Wallet): ProjectionView {
 
 @Injectable()
 export class ReconciliationService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly ledger: WalletLedger,
+  ) {}
 
   async reconcile(period: Period) {
     const { totals, unbalancedOperations, projections } = await this.snapshot(
@@ -84,13 +98,17 @@ export class ReconciliationService {
     };
   }
 
-  async rebuild() {
+  async rebuild(actorId: string) {
     const { mismatches } = await this.snapshot((manager) =>
       this.checkProjections(manager),
     );
     const rebuilt: string[] = [];
     const skipped: { walletId: string; issues: string[] }[] = [];
-    for (const { walletId } of mismatches) {
+    for (const { walletId, issues: found } of mismatches) {
+      if (!isUUID(walletId)) {
+        skipped.push({ walletId, issues: found });
+        continue;
+      }
       const issues = await this.dataSource.transaction(async (manager) => {
         const wallet = await manager.findOne(Wallet, {
           where: { id: walletId },
@@ -103,11 +121,20 @@ export class ReconciliationService {
         if (check.issues.length > 0) {
           return check.issues;
         }
+        if (!isStale(wallet, check)) {
+          return found;
+        }
         wallet.balance = formatCents(check.state.balance);
         wallet.held = formatCents(check.state.held);
         wallet.blocked = check.state.blocked;
         wallet.version = check.version;
-        await manager.save(wallet);
+        await this.ledger.record(
+          manager,
+          wallet,
+          'ProjectionRebuilt',
+          { issues: found },
+          actorId,
+        );
         return [];
       });
       if (issues.length > 0) {
@@ -197,6 +224,12 @@ export class ReconciliationService {
         where: { streamId: In(streamIds) },
         order: { streamId: 'ASC', streamVersion: 'ASC' },
       });
+      const postedRows: { accountId: string; total: string }[] = await manager.query(
+        `SELECT "accountId", SUM(amount)::text AS total
+           FROM ledger_entries WHERE "accountId" = ANY($1) GROUP BY "accountId"`,
+        [streamIds],
+      );
+      const posted = new Map(postedRows.map((r) => [r.accountId, toCents(r.total)]));
       const walletsById = new Map(wallets.map((w) => [w.id, w]));
       const eventsByStream = new Map<string, StoredEvent[]>();
       for (const event of events) {
@@ -225,6 +258,9 @@ export class ReconciliationService {
           if (wallet.version !== check.version) {
             issues.push('version differs from the event log');
           }
+        }
+        if ((posted.get(streamId) ?? 0n) !== check.state.balance) {
+          issues.push('balance in the event log differs from the ledger entries');
         }
         if (check.state.held !== placedHolds) {
           issues.push('held in the event log differs from the sum of placed holds');
@@ -255,6 +291,22 @@ export class ReconciliationService {
         rebuilt: rebuiltView(checkStream([])),
         placedHolds: formatCents(placed.get(wallet.id) ?? 0n),
         issues: ['wallet projection has no events'],
+      });
+    }
+
+    const strayAccounts: { accountId: string }[] = await manager.query(
+      `SELECT DISTINCT "accountId" FROM ledger_entries l
+        WHERE "accountId" NOT LIKE 'external:%' AND "accountId" NOT LIKE 'fx:%'
+          AND NOT EXISTS (
+            SELECT 1 FROM ledger_events e WHERE e."streamId"::text = l."accountId")`,
+    );
+    for (const { accountId } of strayAccounts) {
+      mismatches.push({
+        walletId: accountId,
+        stored: null,
+        rebuilt: rebuiltView(checkStream([])),
+        placedHolds: formatCents(0n),
+        issues: ['ledger entries point to an account with no events'],
       });
     }
 

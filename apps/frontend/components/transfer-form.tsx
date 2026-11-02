@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { parseAmount } from '@/lib/money';
+import { availableAmount, parseAmount } from '@/lib/money';
+import { latestWallet } from '@/lib/realtime-state';
 import { failureMessage, sendWithRetries } from '@/lib/send-with-retries';
 import { CURRENCIES, Transfer, Wallet } from '@/lib/types';
 
@@ -29,8 +30,8 @@ export function TransferForm({ wallets }: { wallets: Wallet[] }) {
   const intent = `${fromWalletId}|${recipient.trim().toLowerCase()}|${amount}|${currency}|${attempt}`;
   const key = useRef<{ intent: string; value: string } | null>(null);
 
-  const wallet = wallets.find((w) => w.id === fromWalletId);
-  const balance = live[fromWalletId]?.balance ?? wallet?.balance;
+  const current = wallets.map((w) => latestWallet(w, live[w.id]));
+  const wallet = current.find((w) => w.id === fromWalletId);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -82,9 +83,9 @@ export function TransferForm({ wallets }: { wallets: Wallet[] }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {wallets.map((w) => (
+              {current.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
-                  {w.currency}: {live[w.id]?.balance ?? w.balance}
+                  {w.currency}: {availableAmount(w)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -125,7 +126,7 @@ export function TransferForm({ wallets }: { wallets: Wallet[] }) {
             </SelectContent>
           </Select>
         </div>
-        <p className="text-sm text-muted-foreground">Available: {balance ?? '—'}</p>
+        <p className="text-sm text-muted-foreground">Available: {wallet ? availableAmount(wallet) : '—'}</p>
         <Button type="submit" disabled={sending}>
           {sending ? 'Sending…' : 'Send transfer'}
         </Button>

@@ -2,6 +2,7 @@ services:
   ledger-service:
     environment:
       LOGIN_RATE_LIMIT_MAX: '1000'
+      LOGIN_IP_RATE_LIMIT_MAX: '100000'
   payments-service:
     environment:
       TRANSFER_RATE_LIMIT_MAX: '100000'

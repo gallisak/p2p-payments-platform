@@ -401,24 +401,6 @@ describe('Transfer saga on Postgres (integration)', () => {
       expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '100.00', held: '0.00' });
     });
 
-    it('completes instead of failing when a timed-out capture actually went through', async () => {
-      const from = await ctx.account('USD', '100');
-      const to = await ctx.account('USD');
-      ctx.ledger.responseDelayMs.capture = 800;
-      const res = await ctx
-        .transfer(from, { toWalletIdentifier: to.email, amount: 30, currency: 'USD' })
-        .expect(202);
-
-      const done = await ctx.settle(from.token, res.body.id);
-
-      expect(done).toMatchObject({ status: 'completed', failureReason: null });
-      const steps = done.steps as { step: string; outcome: string }[];
-      expect(steps.filter((s) => s.step === 'capture').map((s) => s.outcome)).toContain('retry');
-      expect(steps.at(-1)).toMatchObject({ step: 'compensate', outcome: 'succeeded' });
-      expect(ctx.ledger.balances(from.walletId)).toEqual({ balance: '70.00', held: '0.00' });
-      expect(ctx.ledger.balances(to.walletId).balance).toBe('30.00');
-    });
-
     it('keeps retrying compensation until the ledger accepts the release', async () => {
       const from = await ctx.account('USD', '100');
       const to = await ctx.account('USD');

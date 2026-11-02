@@ -13,6 +13,6 @@ import { OutboxModule } from '../outbox/outbox.module';
   imports: [TypeOrmModule.forFeature([Wallet, Hold]), LedgerModule, OutboxModule],
   controllers: [WalletsController],
   providers: [WalletsService, WalletLedger, HoldsService],
-  exports: [WalletsService, HoldsService],
+  exports: [WalletsService, HoldsService, WalletLedger],
 })
 export class WalletsModule {}

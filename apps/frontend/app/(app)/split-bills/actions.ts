@@ -4,22 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { isRedirectError } from 'next/dist/client/components/redirect';
 import { redirect } from 'next/navigation';
 import { parseAmount } from '@/lib/money';
+import { idempotencyHeaders } from '@/lib/idempotency';
 import { authedFetch, errorText } from '@/lib/server-api';
+import { parseParticipants } from '@/lib/split-participants';
 import { SplitBill } from '@/lib/types';
 
 export interface CreateResult {
   error?: string;
-}
-
-function parseParticipants(text: string, custom: boolean) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [email, amount] = line.split(/[\s,;]+/);
-      return custom ? { email, amount: parseAmount(amount) } : { email };
-    });
 }
 
 export async function createSplitBill(_prev: CreateResult, form: FormData): Promise<CreateResult> {
@@ -39,6 +30,7 @@ export async function createSplitBill(_prev: CreateResult, form: FormData): Prom
   try {
     bill = await authedFetch<SplitBill>('/api/split-bills', {
       method: 'POST',
+      headers: idempotencyHeaders(form),
       body: JSON.stringify({
         title: form.get('title'),
         currency: form.get('currency'),

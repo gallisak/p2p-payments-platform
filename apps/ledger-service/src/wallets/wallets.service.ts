@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { IdempotencyKey } from './entities/idempotency-key.entity';
 import { Wallet } from './entities/wallet.entity';
 import { Currency } from './wallets.constants';
 import { WalletLedger } from './wallet-ledger.service';
@@ -13,7 +15,13 @@ import { EventStore } from '../ledger/event-store.service';
 import { depositPostings, withdrawalPostings } from '../ledger/ledger-events';
 import { formatCents, toCents } from '../ledger/money';
 import { isUniqueViolation } from '../common/db-errors';
+import { requestHash } from '../common/idempotency';
 import { OutboxWriter } from '../outbox/outbox.writer';
+
+export interface WalletOperation {
+  wallet: Wallet;
+  replayed: boolean;
+}
 
 @Injectable()
 export class WalletsService {
@@ -113,29 +121,29 @@ export class WalletsService {
     walletId: string,
     ownerId: string,
     amount: number,
-  ): Promise<Wallet> {
+    idempotencyKey?: string,
+  ): Promise<WalletOperation> {
     const cents = toCents(amount);
-    return this.dataSource.transaction(async (manager) => {
-      const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
-      this.ledger.assertActive(wallet);
-      return this.ledger.record(manager, wallet, 'MoneyDeposited', {
+    const scope = { walletId, ownerId, idempotencyKey };
+    return this.once(scope, 'deposit', cents, (manager, wallet) =>
+      this.ledger.record(manager, wallet, 'MoneyDeposited', {
         operationId: randomUUID(),
         amount: formatCents(cents),
         currency: wallet.currency,
         postings: depositPostings(wallet.id, wallet.currency, cents),
-      });
-    });
+      }),
+    );
   }
 
   async withdraw(
     walletId: string,
     ownerId: string,
     amount: number,
-  ): Promise<Wallet> {
+    idempotencyKey?: string,
+  ): Promise<WalletOperation> {
     const cents = toCents(amount);
-    return this.dataSource.transaction(async (manager) => {
-      const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
-      this.ledger.assertActive(wallet);
+    const scope = { walletId, ownerId, idempotencyKey };
+    return this.once(scope, 'withdrawal', cents, (manager, wallet) => {
       if (this.ledger.available(wallet) < cents) {
         throw new BadRequestException('Insufficient funds');
       }
@@ -146,5 +154,48 @@ export class WalletsService {
         postings: withdrawalPostings(wallet.id, wallet.currency, cents),
       });
     });
+  }
+
+  private async once(
+    scope: { walletId: string; ownerId: string; idempotencyKey?: string },
+    operation: string,
+    cents: bigint,
+    apply: (manager: EntityManager, wallet: Wallet) => Promise<Wallet>,
+  ): Promise<WalletOperation> {
+    const { walletId, ownerId, idempotencyKey: key } = scope;
+    const hash = requestHash({ operation, walletId, amount: formatCents(cents) });
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const wallet = await this.ledger.lockOwned(manager, walletId, ownerId);
+        if (key) {
+          const known = await manager.findOneBy(IdempotencyKey, { ownerId, key });
+          if (known) {
+            this.assertSameRequest(known, hash);
+            return { wallet, replayed: true };
+          }
+        }
+        this.ledger.assertActive(wallet);
+        const saved = await apply(manager, wallet);
+        if (key) {
+          await manager.insert(IdempotencyKey, { ownerId, key, requestHash: hash });
+        }
+        return { wallet: saved, replayed: false };
+      });
+    } catch (err) {
+      if (!key || !isUniqueViolation(err)) {
+        throw err;
+      }
+      const winner = await this.dataSource.manager.findOneByOrFail(IdempotencyKey, { ownerId, key });
+      this.assertSameRequest(winner, hash);
+      return { wallet: await this.getById(walletId, ownerId), replayed: true };
+    }
+  }
+
+  private assertSameRequest(known: IdempotencyKey, hash: string): void {
+    if (known.requestHash !== hash) {
+      throw new UnprocessableEntityException(
+        'Idempotency-Key was already used for a different request',
+      );
+    }
   }
 }

@@ -174,6 +174,34 @@ describe('Event-sourced ledger on Postgres (integration)', () => {
     ).resolves.toBeDefined();
   });
 
+  it('refuses to append an event whose postings do not balance', async () => {
+    const { token } = await ctx.registerUser();
+    const walletId = await ctx.openWallet(token, 'USD');
+    const store = ctx.app.get(EventStore);
+    const before = await eventsOf(walletId);
+
+    await expect(
+      ctx.dataSource.transaction((manager) =>
+        store.append(manager, {
+          streamId: walletId,
+          expectedVersion: before.length,
+          type: 'MoneyDeposited',
+          payload: {
+            operationId: '00000000-0000-4000-8000-000000000001',
+            amount: '10.00',
+            currency: 'USD',
+            postings: [
+              { accountId: walletId, amount: '10.00', currency: 'USD' },
+              { accountId: 'external:USD', amount: '-9.00', currency: 'USD' },
+            ],
+          },
+        }),
+      ),
+    ).rejects.toThrow('Postings do not balance');
+
+    expect(await eventsOf(walletId)).toHaveLength(before.length);
+  });
+
   describe('after a random mix of operations', () => {
     let walletIds: string[];
     const outcomes: { action: string; status: number; message?: string }[] = [];

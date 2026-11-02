@@ -62,6 +62,8 @@ export function applyEvent(state: WalletState, event: StoredEvent): WalletState 
       return { ...state, blocked: true };
     case 'WalletUnblocked':
       return { ...state, blocked: false };
+    case 'ProjectionRebuilt':
+      return state;
     default:
       throw new Error(`Unhandled event type ${String(event.type)}`);
   }

@@ -25,6 +25,11 @@ export class InvalidEnvelopeError extends Error {}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AMOUNT_RE = /^-?\d+(\.\d{1,2})?$/;
+const DEFAULT_SCHEMA_VERSION = 1;
+const SUPPORTED_SCHEMA_VERSIONS: Record<string, number> = {
+  MoneyDeposited: 2,
+  MoneyWithdrawn: 2,
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -72,6 +77,12 @@ export function parseEnvelope(source: EventSource, raw: string | undefined): Env
   }
   if (!Number.isInteger(data.schemaVersion) || (data.schemaVersion as number) < 1) {
     throw new InvalidEnvelopeError('schemaVersion must be a positive integer');
+  }
+  const supported = SUPPORTED_SCHEMA_VERSIONS[data.type] ?? DEFAULT_SCHEMA_VERSION;
+  if ((data.schemaVersion as number) > supported) {
+    throw new InvalidEnvelopeError(
+      `${data.type} v${String(data.schemaVersion)} is newer than supported v${supported}`,
+    );
   }
   if (!Number.isSafeInteger(data.streamVersion) || (data.streamVersion as number) < 1) {
     throw new InvalidEnvelopeError('streamVersion must be a positive integer');

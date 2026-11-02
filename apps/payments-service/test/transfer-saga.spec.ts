@@ -1,6 +1,10 @@
 import { TransferSaga, SagaPolicy, SagaPorts } from '../src/saga/transfer-saga';
 import { LedgerPort, LedgerWallet } from '../src/ledger/ledger.client';
-import { LedgerRejectedError, LedgerUnavailableError } from '../src/ledger/ledger.errors';
+import {
+  LedgerAccessDeniedError,
+  LedgerRejectedError,
+  LedgerUnavailableError,
+} from '../src/ledger/ledger.errors';
 import { Transfer } from '../src/transfers/entities/transfer.entity';
 import { TransferStatus } from '../src/transfers/transfer-status';
 
@@ -24,6 +28,7 @@ const policy: SagaPolicy = {
 const rejected = (status: number, message = `rejected ${status}`) =>
   new LedgerRejectedError(status, message);
 const unavailable = (retryInMs = 0) => new LedgerUnavailableError('ledger down', retryInMs);
+const denied = () => new LedgerAccessDeniedError('ledger refused the key');
 
 function transfer(status: TransferStatus, overrides: Partial<Transfer> = {}): Transfer {
   return Object.assign(new Transfer(), {
@@ -190,8 +195,17 @@ describe('TransferSaga', () => {
       expect(ledger.releaseHold).not.toHaveBeenCalled();
     });
 
+    it.each([400, 404, 423])(
+      'voids the hold when a retry is refused with %i because the first attempt may still land',
+      async (status) => {
+        const { saga } = setup({ placeHold: jest.fn(async () => { throw rejected(status); }) });
+
+        expect(await saga.step(transfer('checked', { attempts: 1 }))).toMatchObject({ kind: 'compensate' });
+      },
+    );
+
     it('compensates once retries are exhausted because the hold may have been placed', async () => {
-      const { saga } = setup({ placeHold: jest.fn(async () => { throw unavailable(); }) });
+      const { saga } = setup({ placeHold: jest.fn(async () => { throw denied(); }) });
 
       expect(await saga.step(transfer('checked', { attempts: 2 }))).toMatchObject({
         kind: 'compensate',
@@ -337,8 +351,21 @@ describe('TransferSaga', () => {
       expect(await saga.step(transfer('checked'))).toMatchObject({ kind: 'retry', delayMs: 4_000 });
     });
 
+    it.each(['pending', 'checked', 'funds_held', 'confirmed'] as const)(
+      'keeps retrying a %s transfer past the attempt limit while the ledger is down',
+      async (status) => {
+        const failing = jest.fn(async () => { throw unavailable(); });
+        const { saga } = setup({ placeHold: failing, getWallet: failing, captureHold: failing });
+
+        expect(await saga.step(transfer(status, { attempts: 50 }))).toMatchObject({
+          kind: 'retry',
+          delayMs: policy.retryMaxMs,
+        });
+      },
+    );
+
     it('fails a transfer that never got past the check once retries are exhausted', async () => {
-      const { saga } = setup({ getWallet: jest.fn(async () => { throw unavailable(); }) });
+      const { saga } = setup({ getWallet: jest.fn(async () => { throw denied(); }) });
 
       expect(await saga.step(transfer('pending', { attempts: 2 }))).toMatchObject({
         kind: 'fail',
@@ -349,7 +376,7 @@ describe('TransferSaga', () => {
     it.each(['checked', 'funds_held', 'confirmed'] as const)(
       'compensates a %s transfer once retries are exhausted',
       async (status) => {
-        const failing = jest.fn(async () => { throw unavailable(); });
+        const failing = jest.fn(async () => { throw denied(); });
         const { saga } = setup({ placeHold: failing, getWallet: failing, captureHold: failing });
 
         expect(await saga.step(transfer(status, { attempts: 2 }))).toMatchObject({

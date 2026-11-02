@@ -11,6 +11,15 @@ import { NotificationsApp, createNotificationsApp } from './support/integration-
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function withRetryIdle(ctx: NotificationsApp, retryIdleMs: number): () => void {
+  const options = ctx.consumer.options as { retryIdleMs: number };
+  const original = options.retryIdleMs;
+  options.retryIdleMs = retryIdleMs;
+  return () => {
+    options.retryIdleMs = original;
+  };
+}
+
 describe('Event consumer on Postgres and Redis Streams (integration)', () => {
   let ctx: NotificationsApp;
 
@@ -30,6 +39,10 @@ describe('Event consumer on Postgres and Redis Streams (integration)', () => {
   const pendingCount = async (stream: string) => {
     const [count] = (await ctx.redis.xpending(stream, 'notifications')) as [number];
     return count;
+  };
+  const deliveriesOf = async (stream: string, id: string) => {
+    const [entry] = (await ctx.redis.xpending(stream, 'notifications', id, id, 1)) as [string, string, number, number][];
+    return entry[3];
   };
 
   it('projects a ledger event into the wallet snapshot and the owner’s feed', async () => {
@@ -186,6 +199,64 @@ describe('Event consumer on Postgres and Redis Streams (integration)', () => {
     expect(await ctx.deadLetters()).toContainEqual(expect.objectContaining({ id, deliveries: '3' }));
     expect(await pendingCount(ctx.streams.ledger)).toBe(0);
     expect(await ctx.dataSource.getRepository(ProcessedEvent).countBy({ eventId: e.eventId })).toBe(0);
+  });
+
+  describe('while its database is down', () => {
+    const store = () => (ctx.consumer as unknown as { store: NotificationsStore }).store;
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('leaves pending events alone and applies them after the outage', async () => {
+      const ownerId = randomUUID();
+      const e = ledgerEnvelope({ type: 'MoneyDeposited', ownerId, payload: depositPayload('6.00') });
+      const id = await ctx.publish('ledger', e);
+      await ctx.redis.xreadgroup('GROUP', 'notifications', 'crashed-consumer', 'COUNT', 100, 'STREAMS', ctx.streams.ledger, '>');
+      const ping = jest.spyOn(store(), 'ping').mockResolvedValue(false);
+      const restore = withRetryIdle(ctx, 0);
+      try {
+        for (let i = 0; i < 8; i++) {
+          await expect(ctx.consumer.reclaimOnce()).rejects.toThrow('store is unavailable');
+        }
+        await expect(ctx.consumer.pollOnce(1)).rejects.toThrow('store is unavailable');
+        expect(await deliveriesOf(ctx.streams.ledger, id)).toBe(1);
+
+        ping.mockRestore();
+        await ctx.consumer.reclaimOnce();
+      } finally {
+        restore();
+      }
+
+      expect(await activities().countBy({ eventId: e.eventId })).toBe(1);
+      expect(await ctx.deadLetters()).not.toContainEqual(expect.objectContaining({ id }));
+    });
+
+    it('does not count a delivery that failed because the database went down', async () => {
+      const e = ledgerEnvelope({ type: 'MoneyDeposited', payload: depositPayload('8.00') });
+      const id = await ctx.publish('ledger', e);
+      jest.spyOn(store(), 'apply').mockRejectedValueOnce(new Error('connection lost'));
+      jest.spyOn(store(), 'ping').mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      const restore = withRetryIdle(ctx, 0);
+      try {
+        await expect(ctx.consumer.pollOnce(50)).rejects.toThrow('store is unavailable');
+        expect(await deliveriesOf(ctx.streams.ledger, id)).toBe(0);
+
+        await ctx.consumer.reclaimOnce();
+      } finally {
+        restore();
+      }
+
+      expect(await activities().countBy({ eventId: e.eventId })).toBe(1);
+      expect(await pendingCount(ctx.streams.ledger)).toBe(0);
+    });
+  });
+
+  it('purges every processed event id past its retention, not just one batch', async () => {
+    const repo = ctx.dataSource.getRepository(ProcessedEvent);
+    const processedAt = new Date(Date.now() - 8 * 24 * 3_600_000);
+    await repo.insert(Array.from({ length: 2_500 }, () => ({ eventId: randomUUID(), source: 'ledger', processedAt })));
+
+    const store = (ctx.consumer as unknown as { store: NotificationsStore }).store;
+    expect(await store.purgeProcessed(7 * 24 * 3_600_000)).toBe(2_500);
   });
 
   it('purges processed event ids past their retention', async () => {

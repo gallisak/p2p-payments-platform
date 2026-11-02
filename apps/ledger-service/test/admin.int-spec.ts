@@ -394,7 +394,7 @@ describe('Admin API on Postgres (integration)', () => {
         balance: '100.00',
         held: '0.00',
         blocked: false,
-        version: 2,
+        version: 3,
       });
       expect((await asAdmin('get', '/reconciliation').expect(200)).body.ok).toBe(true);
     });

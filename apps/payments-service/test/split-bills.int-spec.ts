@@ -34,6 +34,64 @@ describe('Split bills on Postgres (integration)', () => {
     get: (path: string) => ctx.http().get(path).set('Authorization', `Bearer ${user.token}`),
   });
 
+  describe('Idempotency-Key on creation', () => {
+    const body = (participants: Account[], dueAt: string, title = 'Dinner') => ({
+      title,
+      currency: 'USD',
+      totalAmount: 90,
+      dueAt,
+      split: 'equal',
+      participants: participants.map((p) => ({ email: p.email })),
+    });
+    const billsOf = (creatorId: string) => ctx.dataSource.getRepository(SplitBill).countBy({ creatorId });
+
+    it('creates the bill once and replays the first result', async () => {
+      const [creator, guest] = [await ctx.account('USD'), await ctx.account('USD')];
+      const key = randomUUID();
+      const dueAt = inDays(7);
+
+      const first = await authed(creator).post('/split-bills', body([guest], dueAt), key).expect(201);
+      const again = await authed(creator).post('/split-bills', body([guest], dueAt), key).expect(200);
+
+      expect(again.headers['idempotent-replayed']).toBe('true');
+      expect(again.body.id).toBe(first.body.id);
+      expect(await billsOf(creator.userId)).toBe(1);
+    });
+
+    it('creates one bill for concurrent requests with the same key', async () => {
+      const [creator, guest] = [await ctx.account('USD'), await ctx.account('USD')];
+      const key = randomUUID();
+      const dueAt = inDays(7);
+
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => authed(creator).post('/split-bills', body([guest], dueAt), key)),
+      );
+
+      expect(results.map((r) => r.status).sort()).toEqual([200, 200, 200, 200, 201]);
+      expect(new Set(results.map((r) => r.body.id)).size).toBe(1);
+      expect(await billsOf(creator.userId)).toBe(1);
+    });
+
+    it('refuses the same key for a different bill', async () => {
+      const [creator, guest] = [await ctx.account('USD'), await ctx.account('USD')];
+      const key = randomUUID();
+      const dueAt = inDays(7);
+
+      await authed(creator).post('/split-bills', body([guest], dueAt), key).expect(201);
+      await authed(creator).post('/split-bills', body([guest], dueAt, 'Lunch'), key).expect(422);
+    });
+
+    it('keeps keys of different users apart and validates the header', async () => {
+      const [one, two, guest] = [await ctx.account('USD'), await ctx.account('USD'), await ctx.account('USD')];
+      const key = randomUUID();
+      const dueAt = inDays(7);
+
+      await authed(one).post('/split-bills', body([guest], dueAt), key).expect(201);
+      await authed(two).post('/split-bills', body([guest], dueAt), key).expect(201);
+      await authed(one).post('/split-bills', body([guest], dueAt), 'bad key').expect(400);
+    });
+  });
+
   async function bill(creator: Account, participants: Account[], overrides: object = {}) {
     const res = await authed(creator)
       .post('/split-bills', {

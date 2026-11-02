@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { LiveWallets } from '@/components/live-wallets';
 import { PageTitle } from '@/components/page-title';
 import { SectionCard } from '@/components/section-card';
@@ -16,7 +17,7 @@ export default async function WalletsPage() {
       </SectionCard>
       <SectionCard title="Manage">
         <OpenWalletForm />
-        <DepositForm wallets={wallets} />
+        <DepositForm wallets={wallets} formId={randomUUID()} />
       </SectionCard>
     </>
   );

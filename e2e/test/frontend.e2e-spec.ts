@@ -8,7 +8,11 @@ class Browser {
     const res = await fetch(`${FRONTEND_URL}${path}`, {
       redirect: 'manual',
       ...init,
-      headers: { 'Content-Type': 'application/json', cookie: this.cookieHeader(), ...(init.headers ?? {}) },
+      headers: {
+        ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        cookie: this.cookieHeader(),
+        ...(init.headers ?? {}),
+      },
     });
     for (const line of res.headers.getSetCookie()) {
       const [pair] = line.split(';');
@@ -65,7 +69,22 @@ describe('Frontend through the BFF (e2e)', () => {
 
     const res = await browser.fetch('/admin');
 
-    expect(await res.text()).not.toContain('Reconciliation');
+    const page = await res.text();
+    expect(res.status).toBe(200);
+    expect(page).toContain('content="1;url=/dashboard"');
+    expect(page).not.toContain('Reconciliation');
+  });
+
+  it('sends an admin whose token the services refuse to the login page', async () => {
+    const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const forged = `${part({ alg: 'HS256' })}.${part({ sub: randomUUID(), role: 'admin', exp: Date.now() / 1000 + 600 })}.bad`;
+
+    const res = await fetch(`${FRONTEND_URL}/admin`, { redirect: 'manual', headers: { cookie: `accessToken=${forged}` } });
+    const page = await res.text();
+
+    expect(page).toContain('NEXT_REDIRECT');
+    expect(page).toContain('/login');
+    expect(page).not.toContain('Could not load the reconciliation report');
   });
 
   it('renews an expired access token from the refresh cookie', async () => {
@@ -93,11 +112,44 @@ describe('Frontend through the BFF (e2e)', () => {
 
     const forged = await browser.fetch('/api/auth/logout', { method: 'POST', headers: { Origin: 'https://evil.example' } });
     expect(forged.status).toBe(403);
+    const opaque = await browser.fetch('/api/auth/logout', { method: 'POST', headers: { Origin: 'null' } });
+    expect(opaque.status).toBe(403);
 
     const res = await browser.fetch('/api/auth/logout', { method: 'POST' });
     expect(res.status).toBe(303);
     const refresh = await call('POST', `${LEDGER_URL}/auth/refresh`, { body: { refreshToken: stolen } });
     expect(refresh.status).toBe(401);
+  });
+
+  it('tops up once when the same Server Action form is submitted twice', async () => {
+    const user = await registerUser('topup');
+    const walletId = await openWallet(user, 'USD');
+    const browser = new Browser();
+    await browser.fetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: user.email, password: 'password123' }),
+    });
+    const page = await (await browser.fetch('/wallets')).text();
+    const form = [...page.matchAll(/<form[\s\S]*?<\/form>/g)].map(([html]) => html).find((html) => html.includes('name="formId"'));
+    const fields = [...(form as string).matchAll(/<input[^>]*type="hidden"[^>]*>/g)].map(([input]) => [
+      /name="([^"]+)"/.exec(input)?.[1] as string,
+      (/value="([^"]*)"/.exec(input)?.[1] ?? '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+    ]);
+    const submit = (amount: string) => {
+      const body = new FormData();
+      fields.forEach(([name, value]) => body.set(name, value));
+      body.set('walletId', walletId);
+      body.set('amount', amount);
+      return browser.fetch('/wallets', { method: 'POST', body });
+    };
+    const balance = async () => (await call('GET', `${LEDGER_URL}/wallets/${walletId}`, { token: user.token })).body.balance;
+
+    await submit('12.50');
+    await submit('12.50');
+    expect(await balance()).toBe('12.50');
+
+    await submit('1.00');
+    expect(await balance()).toBe('13.50');
   });
 
   it('sends a transfer with its Idempotency-Key and replays it', async () => {
@@ -139,7 +191,7 @@ describe('Frontend through the BFF (e2e)', () => {
     const browser = new Browser();
     const login = await browser.fetch('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: process.env.ADMIN_EMAIL ?? 'admin@ledger.local', password: process.env.ADMIN_PASSWORD ?? 'change-me-admin' }),
+      body: JSON.stringify({ email: process.env.ADMIN_EMAIL ?? 'admin@ledger.local', password: process.env.ADMIN_PASSWORD ?? 'dev-only-admin-password' }),
     });
     expect(token).toBeTruthy();
     expect(login.status).toBe(200);

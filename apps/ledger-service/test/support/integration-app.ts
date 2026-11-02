@@ -14,6 +14,7 @@ import { INTERNAL_API_KEY_HEADER } from '../../src/internal/internal-api-key.gua
 import { User } from '../../src/auth/entities/user.entity';
 import { Wallet } from '../../src/wallets/entities/wallet.entity';
 import { Hold } from '../../src/wallets/entities/hold.entity';
+import { IdempotencyKey } from '../../src/wallets/entities/idempotency-key.entity';
 import { LedgerEvent } from '../../src/ledger/entities/ledger-event.entity';
 import { LedgerEntry } from '../../src/ledger/entities/ledger-entry.entity';
 import { OutboxMessage } from '../../src/outbox/outbox-message.entity';
@@ -77,7 +78,7 @@ export async function createIntegrationApp(
       TypeOrmModule.forRoot({
         type: 'postgres',
         ...testDatabase,
-        entities: [User, Wallet, Hold, LedgerEvent, LedgerEntry, OutboxMessage],
+        entities: [User, Wallet, Hold, IdempotencyKey, LedgerEvent, LedgerEntry, OutboxMessage],
         synchronize: true,
         dropSchema: true,
       }),

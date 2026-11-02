@@ -21,6 +21,14 @@ describe('Email letter case (integration)', () => {
   const login = (email: string, password = 'password123') =>
     ctx.http().post('/auth/login').send({ email, password });
 
+  it('answers 409, not 500, to everyone who loses a registration race', async () => {
+    const email = `race-${randomUUID()}@example.com`;
+
+    const results = await Promise.all(Array.from({ length: 6 }, () => register(email)));
+
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409, 409]);
+  });
+
   it('stores emails in lowercase', async () => {
     const local = `Mixed.${randomUUID()}`;
 

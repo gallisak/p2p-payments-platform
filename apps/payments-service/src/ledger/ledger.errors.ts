@@ -15,3 +15,5 @@ export class LedgerUnavailableError extends Error {
     super(message);
   }
 }
+
+export class LedgerAccessDeniedError extends LedgerUnavailableError {}

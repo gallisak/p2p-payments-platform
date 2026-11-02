@@ -9,8 +9,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
   }
   try {
+    const clientIp = req.headers.get('x-forwarded-for');
     const tokens: TokenPair = await bffFetch<TokenPair>('/api/auth/login', {
       method: 'POST',
+      headers: clientIp ? { 'X-Forwarded-For': clientIp } : undefined,
       body: JSON.stringify(body),
     });
     return withSession(req, NextResponse.json({ ok: true }), tokens);

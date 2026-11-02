@@ -26,7 +26,7 @@ export function PayShare({ billId, share, currency, wallets }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<Transfer | null>(null);
   const [settled, setSettled] = useState(false);
-  const key = useRef<string | null>(null);
+  const key = useRef<{ walletId: string; value: string } | null>(null);
 
   const onSettled = useCallback(() => {
     setSettled(true);
@@ -34,13 +34,15 @@ export function PayShare({ billId, share, currency, wallets }: Props) {
   }, [router]);
 
   async function pay() {
-    key.current ??= crypto.randomUUID();
+    if (key.current?.walletId !== fromWalletId) {
+      key.current = { walletId: fromWalletId, value: crypto.randomUUID() };
+    }
     setSending(true);
     setError(null);
     setSent(null);
     setSettled(false);
     try {
-      const res = await sendWithRetries(`/api/split-bills/${billId}/shares/${share.id}/pay`, key.current, {
+      const res = await sendWithRetries(`/api/split-bills/${billId}/shares/${share.id}/pay`, key.current.value, {
         fromWalletId,
       });
       if (res.ok) {
