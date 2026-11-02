@@ -1,0 +1,1 @@
+export const MAX_OPERATION_AMOUNT = 1_000_000;

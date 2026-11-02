@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Request,
   UseGuards,
@@ -28,7 +29,7 @@ export class WalletsController {
 
   @Get(':id')
   getOne(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
   ) {
     return this.wallets.getById(id, req.user.userId);
@@ -36,7 +37,7 @@ export class WalletsController {
 
   @Post(':id/deposit')
   deposit(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
     @Body() dto: DepositDto,
   ) {
@@ -45,7 +46,7 @@ export class WalletsController {
 
   @Post(':id/withdraw')
   withdraw(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
     @Body() dto: WithdrawDto,
   ) {
