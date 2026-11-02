@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { ledgerFetch } from '@/lib/api';
 
 // Server Component: список гаманців вантажиться на сервері при рендері
@@ -8,7 +9,9 @@ export default async function WalletsPage() {
   let loadError: string | null = null;
 
   try {
-    wallets = await ledgerFetch('/wallets');
+    wallets = await ledgerFetch('/wallets', {
+      headers: { Authorization: `Bearer ${cookies().get('accessToken')?.value}` },
+    });
   } catch (err) {
     loadError = (err as Error).message;
   }
