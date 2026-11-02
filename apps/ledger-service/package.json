@@ -11,6 +11,7 @@
     "lint:ci": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit -p .",
     "test": "jest",
+    "test:int": "jest --config jest.int.config.json --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
@@ -41,10 +42,12 @@
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
     "@types/passport-jwt": "^4.0.1",
+    "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
+    "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
@@ -53,6 +56,7 @@
     "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": ".",
     "testRegex": "(/test/.*|\\.(test|spec))\\.ts$",
+    "testPathIgnorePatterns": ["/node_modules/", "\\.int-spec\\.ts$"],
     "transform": { "^.+\\.(t|j)s$": "ts-jest" },
     "collectCoverageFrom": ["src/**/*.(t|j)s"]
   }
