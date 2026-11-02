@@ -59,6 +59,10 @@ describe('Participants of a split bill', () => {
     expect(parseParticipants('a@example.com\n\n', true)).toEqual([{ email: 'a@example.com', amount: null }]);
   });
 
+  it.each([', 10', ';', ',,5'])('leaves the email empty for the API to reject in %s', (line) => {
+    expect(parseParticipants(line, false)).toEqual([{ email: '' }]);
+  });
+
   it('reads only the email for an equal split', () => {
     expect(parseParticipants('a@example.com 5\nb@example.com', false)).toEqual([
       { email: 'a@example.com' },

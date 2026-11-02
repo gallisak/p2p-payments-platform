@@ -6,7 +6,8 @@ export function parseParticipants(text: string, custom: boolean) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [, email, amount] = /^([^\s,;]+)[\s,;]*(.*)$/.exec(line) as RegExpExecArray;
+      const [email] = line.split(/[\s,;]/, 1);
+      const amount = line.slice(email.length).replace(/^[\s,;]+/, '');
       return custom ? { email, amount: parseAmount(amount) } : { email };
     });
 }
