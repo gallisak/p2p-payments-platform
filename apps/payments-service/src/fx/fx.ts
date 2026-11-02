@@ -23,6 +23,10 @@ export function convertCents(cents: bigint, rateMicro: bigint): bigint {
   return (cents * rateMicro + MICRO / 2n) / MICRO;
 }
 
+export function creditCents(cents: bigint, rateMicro: bigint): bigint {
+  return (cents * rateMicro) / MICRO;
+}
+
 export function crossRate(perUsd: Record<string, number>, from: string, to: string): bigint {
   if (from === to) {
     return MICRO;
@@ -32,5 +36,5 @@ export function crossRate(perUsd: Record<string, number>, from: string, to: stri
   if (fromRate === undefined || toRate === undefined) {
     throw new Error(`No rate for ${from}/${to}`);
   }
-  return toMicro(toRate / fromRate);
+  return (toMicro(toRate) * MICRO) / toMicro(fromRate);
 }

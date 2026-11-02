@@ -188,21 +188,12 @@ describe('TransferSaga', () => {
       [404, 'source_wallet_not_found'],
       [423, 'source_wallet_blocked'],
       [409, 'rejected_by_ledger'],
-    ])('fails without compensation when the ledger refuses the hold with %i', async (status, reason) => {
-      const { saga, ledger } = setup({ placeHold: jest.fn(async () => { throw rejected(status); }) });
+    ])('voids the hold when the ledger refuses it with %i because an earlier attempt may still land', async (status, reason) => {
+      const { saga } = setup({ placeHold: jest.fn(async () => { throw rejected(status); }) });
 
-      expect(await saga.step(transfer('checked'))).toMatchObject({ kind: 'fail', reason });
-      expect(ledger.releaseHold).not.toHaveBeenCalled();
+      expect(await saga.step(transfer('checked'))).toMatchObject({ kind: 'compensate', reason });
+      expect(await saga.step(transfer('checked', { attempts: 1 }))).toMatchObject({ kind: 'compensate', reason });
     });
-
-    it.each([400, 404, 423])(
-      'voids the hold when a retry is refused with %i because the first attempt may still land',
-      async (status) => {
-        const { saga } = setup({ placeHold: jest.fn(async () => { throw rejected(status); }) });
-
-        expect(await saga.step(transfer('checked', { attempts: 1 }))).toMatchObject({ kind: 'compensate' });
-      },
-    );
 
     it('compensates once retries are exhausted because the hold may have been placed', async () => {
       const { saga } = setup({ placeHold: jest.fn(async () => { throw denied(); }) });
@@ -233,6 +224,19 @@ describe('TransferSaga', () => {
 
       expect(result).toMatchObject({ kind: 'compensate', reason: 'rate_expired' });
       expect(ledger.getWallet).not.toHaveBeenCalled();
+    });
+
+    it('ignores the rate of a same-currency transfer', async () => {
+      const { saga } = setup();
+
+      expect(await saga.step(transfer('funds_held', { toCurrency: 'USD', rateExpiresAt: NOW }))).toMatchObject({
+        kind: 'advance',
+        status: 'confirmed',
+      });
+      expect(await saga.step(transfer('confirmed', { toCurrency: 'USD', rateExpiresAt: NOW }))).toMatchObject({
+        kind: 'advance',
+        status: 'completed',
+      });
     });
 
     it('compensates when the recipient was blocked after the funds were held', async () => {

@@ -1,4 +1,4 @@
-import { convertCents, crossRate, formatMicro, parseMicro } from '../src/fx/fx';
+import { convertCents, creditCents, crossRate, formatMicro, parseMicro } from '../src/fx/fx';
 import { FxService, ratesFromEnv } from '../src/fx/fx.service';
 
 describe('FX', () => {
@@ -6,7 +6,8 @@ describe('FX', () => {
 
   it('computes cross rates with six decimals', () => {
     expect(formatMicro(crossRate(perUsd, 'USD', 'EUR'))).toBe('0.920000');
-    expect(formatMicro(crossRate(perUsd, 'EUR', 'UAH'))).toBe('45.108696');
+    expect(formatMicro(crossRate(perUsd, 'EUR', 'UAH'))).toBe('45.108695');
+    expect(formatMicro(crossRate(perUsd, 'EUR', 'USD'))).toBe('1.086956');
     expect(formatMicro(crossRate(perUsd, 'UAH', 'UAH'))).toBe('1.000000');
   });
 
@@ -19,6 +20,24 @@ describe('FX', () => {
     expect(convertCents(1n, parseMicro('0.5'))).toBe(1n);
     expect(convertCents(1n, parseMicro('0.499999'))).toBe(0n);
     expect(convertCents(99_999_999n, parseMicro('41.5'))).toBe(4_149_999_959n);
+  });
+
+  it('never rounds a credit in the customer’s favour', () => {
+    expect(creditCents(10_000n, parseMicro('0.920000'))).toBe(9_200n);
+    expect(creditCents(21n, parseMicro('0.024096'))).toBe(0n);
+    expect(creditCents(199n, parseMicro('0.5'))).toBe(99n);
+  });
+
+  it.each([
+    ['USD', 'EUR'],
+    ['USD', 'UAH'],
+    ['EUR', 'UAH'],
+  ])('cannot profit from converting %s to %s and back', (a, b) => {
+    const there = parseMicro(formatMicro(crossRate(perUsd, a, b)));
+    const back = parseMicro(formatMicro(crossRate(perUsd, b, a)));
+    for (const start of [1n, 21n, 99n, 2_300_000n, 99_999_999n, 100_000_000_000n]) {
+      expect(creditCents(creditCents(start, there), back)).toBeLessThanOrEqual(start);
+    }
   });
 
   it('round-trips rates', () => {

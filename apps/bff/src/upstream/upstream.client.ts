@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { numberEnv, requireEnv } from '../common/env';
+import { PROXY_SECRET_HEADER } from '../common/trust-proxy';
 
 export type Service = 'ledger' | 'payments' | 'notifications';
 export type Upstream = Service | 'jaeger';
@@ -64,6 +65,9 @@ export class UpstreamClient {
     }
     if (options.clientIp !== undefined) {
       headers['X-Forwarded-For'] = options.clientIp;
+      if (process.env.PROXY_SECRET) {
+        headers[PROXY_SECRET_HEADER] = process.env.PROXY_SECRET;
+      }
     }
     let res: Response;
     let text: string;

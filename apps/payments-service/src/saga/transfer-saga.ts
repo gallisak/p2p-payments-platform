@@ -5,7 +5,7 @@ import {
   LedgerUnavailableError,
 } from '../ledger/ledger.errors';
 import { FxQuote } from '../fx/fx.service';
-import { convertCents, parseMicro } from '../fx/fx';
+import { convertCents, creditCents as creditFor, parseMicro } from '../fx/fx';
 import { formatCents, toCents } from '../common/money';
 import { Transfer } from '../transfers/entities/transfer.entity';
 import { FailureReason, TransferStatus } from '../transfers/transfer-status';
@@ -110,7 +110,7 @@ export class TransferSaga {
 
     const amountCents = toCents(t.amount);
     const quote = await this.ports.quote(source.currency, t.toCurrency);
-    const creditCents = convertCents(amountCents, parseMicro(quote.rate));
+    const creditCents = creditFor(amountCents, parseMicro(quote.rate));
     if (creditCents <= 0n) {
       throw new StepFailure('amount_too_small', 'The amount is zero after conversion');
     }
@@ -144,10 +144,7 @@ export class TransferSaga {
       });
     } catch (err) {
       if (err instanceof LedgerRejectedError) {
-        const rejection = { reason: holdRejection(err.status), detail: err.message };
-        return t.attempts > 0
-          ? { kind: 'compensate', ...rejection }
-          : { kind: 'fail', ...rejection };
+        return { kind: 'compensate', reason: holdRejection(err.status), detail: err.message };
       }
       throw err;
     }
@@ -200,6 +197,9 @@ export class TransferSaga {
   }
 
   private assertRateFresh(t: Transfer): void {
+    if (t.fromCurrency === t.toCurrency) {
+      return;
+    }
     if (!t.rateExpiresAt || this.ports.now() >= t.rateExpiresAt) {
       throw new StepFailure('rate_expired', 'The exchange rate has expired');
     }

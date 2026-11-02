@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
-import { FRONTEND_URL, LEDGER_URL, admin, call, openWallet, registerUser, subjectOf, until, walletIn } from '../src/client';
+import { BFF_URL, FRONTEND_URL, LEDGER_URL, admin, call, openWallet, registerUser, subjectOf, until, walletIn } from '../src/client';
+
+const LOGIN_LIMIT = 1_000;
 
 class Browser {
   private cookies = new Map<string, string>();
@@ -184,6 +186,25 @@ describe('Frontend through the BFF (e2e)', () => {
       return body.status === 'completed' ? body : undefined;
     }, 20_000, 'the transfer to complete');
     expect((await walletIn(bob, 'USD'))?.balance).toBe('20.00');
+  });
+
+  it.each([
+    ['the frontend', `${FRONTEND_URL}/api/auth/login`],
+    ['the BFF', `${BFF_URL}/api/auth/login`],
+    ['the ledger', `${LEDGER_URL}/auth/login`],
+  ])('keeps limiting logins through %s when X-Forwarded-For rotates', async (_name, url) => {
+    const email = `spoof-${randomUUID()}@example.com`;
+    const statuses = new Set<number>();
+    for (let i = 0; i <= LOGIN_LIMIT && !statuses.has(429); i++) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': `198.51.${i >> 8}.${i & 255}` },
+        body: JSON.stringify({ email, password: 'wrong-password' }),
+      });
+      statuses.add(res.status);
+    }
+
+    expect(statuses).toContain(429);
   });
 
   it('shows the admin screen to the admin', async () => {

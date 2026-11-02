@@ -121,7 +121,10 @@ spans to Jaeger over OTLP; these arrows are left out of the diagram.
 
 FX is a module inside `payments-service`, not a separate service: it is an optional
 bonus in the assignment, and its rates are static (`FX_RATES_PER_USD`) with a TTL
-cache and a quote TTL.
+cache and a quote TTL. Cross rates and credits round down, so converting there and
+back can never produce more than the starting amount. Rounding half-up would let a
+user turn 0.21 UAH into 0.42 UAH through USD at the expense of the FX account, and
+reconciliation could not see it because each currency still nets to zero.
 
 ## Starter code
 
@@ -233,8 +236,8 @@ pending → checked → funds_held → confirmed → completed
                      compensating → failed
 ```
 
-A failure in `check` and a first hold rejection go straight to `failed`, because no
-money is on hold. Anything later goes through `compensating`.
+A failure in `check` goes straight to `failed`, because no money is on hold. Anything
+later, including a rejected hold, goes through `compensating`.
 
 The worker claims due steps with `FOR UPDATE SKIP LOCKED`, sets a lease and applies
 the result with an optimistic `version` check. If a worker crashes, another picks the
@@ -246,8 +249,8 @@ step up when the lease expires. All hold operations in the ledger are idempotent
 | Step | What it does | If it fails | What is rolled back |
 |---|---|---|---|
 | `check` | wallets, deny list, rate, limits, daily limit reservation | `failed` | nothing: money was not touched. The limit reservation clears automatically because `failed` transfers are not counted |
-| `hold` | `HoldPlaced` under the transfer id | first rejection: `failed`. Rejection after a retry: `compensating` | the first attempt may still be in flight, so `release` writes a `voided` tombstone and a late hold gets 409 |
-| `confirm` | rate freshness, recipient state | `compensating` | `HoldReleased`, funds are available again |
+| `hold` | `HoldPlaced` under the transfer id | `compensating` | an earlier attempt may still be in flight, even after a worker crash, so `release` writes a `voided` tombstone and a late hold gets 409 |
+| `confirm` | rate freshness for a conversion, recipient state | `compensating` | `HoldReleased`, funds are available again |
 | `capture` | `TransferCompleted` + `TransferReceived` in one transaction | `compensating` | `HoldReleased`. If the ledger answers 409 "already captured", the capture actually went through and the transfer becomes `completed` |
 | `compensate` | releases the hold | retries with no attempt limit, with capped backoff, and ignores the deadline | money must not stay on hold. 404 means there is nothing to release |
 | notification | event from the outbox | redelivery | not a saga step: the money has already moved |
@@ -325,9 +328,11 @@ a changed amount or a new render after success gives a new one.
   The first stops password guessing without letting anyone lock an account for
   everyone; the second holds back trying one password across many accounts.
 - Transfers and share payments are rate limited per user.
-- The BFF and ledger take the real client address from `X-Forwarded-For` only if
-  `TRUST_PROXY` allows it. Next.js does not overwrite the client's header, so in
-  production a proxy that overwrites it must sit in front of the frontend.
+- A client cannot choose the address these limits use. Next.js keeps a client's
+  `X-Forwarded-For`, so `apps/frontend/server.js` replaces it with the socket address.
+  The BFF and ledger accept the header only with a valid `X-Proxy-Secret`
+  (`PROXY_SECRET`) and from an address `TRUST_PROXY` allows. Without the secret they
+  drop the header, including on their directly published ports.
 - Default values are meant for local development, so all ports are bound to
   `127.0.0.1`. The service and frontend containers run as the `node` user.
 
@@ -374,12 +379,17 @@ npm run test:int             # integration: ledger, payments and notifications
 ```
 
 Integration tests need Postgres and Redis. They create a `<service>_test` database and
-reset its schema. E2e and load tests run against a running stack:
+reset its schema. E2e and load tests run against a running stack on the default
+ports:
 
 ```bash
 docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml up -d --build
 cd e2e && npm ci && npm test && npm run load
 ```
+
+For a stack on other ports, set `LEDGER_URL`, `PAYMENTS_URL`, `NOTIFICATIONS_URL`,
+`BFF_URL`, `FRONTEND_URL`, `JAEGER_URL`, `LEDGER_DB_URL` and `PAYMENTS_DB_URL`. Two
+tests connect to the databases directly, so the last two matter as well.
 
 | Spec §6 requirement | Where |
 |---|---|
@@ -431,6 +441,9 @@ There was no double spend, and no money disappeared or was duplicated.
 - **Permanent rejection during compensation.** If release keeps being rejected with a
   4xx, the saga stays visibly in `compensating`. This is reachable only with corrupted
   data. An operator alert would be needed.
+- **A load balancer in front of the frontend.** `server.js` uses the socket address,
+  so behind a load balancer every client would share one address. Production would
+  read the client address from that balancer instead.
 - **Sessions.** One refresh token per user, with no detection of a stolen token being
   reused. Signing in on a second device ends the first session.
 - **A separate `fx-service`** with a real rate source.
