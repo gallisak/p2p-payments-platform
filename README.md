@@ -2,8 +2,7 @@
 
 A payments platform with multi-currency wallets, peer-to-peer transfers and split
 bills. The event log is immutable, and any balance can be rebuilt from it from
-scratch. The project is built on top of the provided starter repository
-(assignment no. 6).
+scratch. The project is built on top of the provided starter repository.
 
 - [Running the project](#running-the-project)
 - [Architecture](#architecture)
@@ -41,6 +40,7 @@ All ports are published on `127.0.0.1` only.
 | BFF | http://localhost:3004 (`/docs`, `/metrics`, `/health`) |
 | Jaeger | http://localhost:16686 |
 | Postgres | 5433 (ledger), 5434 (payments), 5435 (notifications) |
+| Redis | 6379 |
 
 Local admin account: `admin@ledger.local` / `dev-only-admin-password`.
 
@@ -63,7 +63,8 @@ created once.
 
 To develop without Docker: copy `.env.example` to `.env` in each service, start the
 dependencies (`docker compose up -d ledger-db payments-db notifications-db redis`)
-and run `npm install && npm run start:dev` in the service you need.
+and run `npm install && npm run start:dev` in the service you need (`npm run dev` for
+the frontend).
 
 ## Architecture
 
@@ -107,7 +108,8 @@ flowchart LR
 
 Solid arrows are synchronous HTTP; dashed arrows are asynchronous events or
 WebSocket. Each subgraph is a separate transaction boundary: a Postgres transaction
-never spans two databases, and XA is not used.
+never spans two databases, and XA is not used. All four NestJS services also export
+spans to Jaeger over OTLP; these arrows are left out of the diagram.
 
 | Service | Responsible for | Does not |
 |---|---|---|
@@ -126,10 +128,10 @@ cache and a quote TTL.
 | What | State | Why |
 |---|---|---|
 | Monorepo, compose, CI | extended | added services, Jaeger, an e2e job and multi-stage Dockerfiles. Ports are bound to `127.0.0.1` |
-| `auth` in ledger-service | structure kept, hardened | added hashed refresh token rotation, roles, login rate limiting, email normalization and secret checks. The module was not rewritten |
+| `auth` in ledger-service | structure kept, hardened | added atomic refresh token rotation, logout, an admin account with a role guard, login rate limiting, email normalization and secret checks. The module was not rewritten |
 | `wallets` in ledger-service | reworked | the naive balance CRUD was replaced with event sourcing and a projection |
 | `payments-service` | controller and DTO skeleton built out | there was no business logic |
-| `notifications-service` | written from scratch | it was an empty project |
+| `notifications-service` | written from scratch | it only had a health endpoint |
 | Frontend: login, registration, wallets | approach kept, bugs fixed | the pages are still a Server Component plus a route handler for tokens |
 | Frontend: transfers, split bills, admin, feed | written from scratch | the starter code did not have them |
 | `synchronize: true` in TypeORM | kept | see [what I would do differently](#not-done-or-would-do-differently) |
@@ -145,15 +147,17 @@ All of these come from the event sourcing refactoring or from security fixes.
 | `amount` could be any positive number | at most two decimals, with a per-operation cap | money is stored in cents |
 | no endpoint to create a wallet | `POST /wallets` with a currency, idempotent; a recipient's wallet opens automatically | multiple currencies, spec 4.2 |
 | response had `balance` | added `held`, `blocked`, `version` | holds and blocking |
-| depositing into a blocked wallet worked | 423 | wallet blocking |
+| wallets could not be blocked | operations on a blocked wallet give 423 | spec 6: a blocked recipient |
 | `POST /transfers` was a stub | 202, `Idempotency-Key` required | spec 4.2 |
 | `POST /auth/login` had no limit | 429 past the limit | spec 4.3 |
+| API error messages were in Ukrainian | English | the UI is in English |
 
 The `wallets.service.spec.ts` tests with a mocked repository were replaced with
 integration tests of the same names (`wallets.int-spec.ts`, the
 `starter WalletsService behaviour` block): the new implementation works through
-transactions, and a mock cannot prove locking behaviour. CI was extended without
-removing any steps.
+transactions, and a mock cannot prove locking behaviour. `auth.service.spec.ts` only
+gained new tests. In CI, `npm install` became `npm ci` and `npm run lint` became
+`npm run lint:ci`, which does not rewrite files; no other step was removed.
 
 ## Problems found
 
@@ -168,13 +172,6 @@ The fixes were made in `Fix/wallets idor validation (#2)` and
 `Fix/wallet double spend (#3)`. Mutation checks confirm that the tests for 1–4 really
 catch the problem: each fix was removed in a separate worktree, and the matching test
 went red.
-
-A later full review of the finished code found more problems, also closed with
-tests: a saga that failed after 8 seconds of ledger downtime; events lost to the DLQ
-during a notifications DB outage; stale live data overriding fresh SSR data; a hold
-that could land after a rejection; no idempotency key on deposit, withdrawal and
-split bill creation; reconciliation that did not compare events with postings; and a
-login limit that could not see the real client address.
 
 ## Design decisions
 
@@ -223,10 +220,10 @@ under an advisory lock, preserving order.
 
 Strong consistency is needed where a mistake costs money, and a single database
 provides it there. Across services it is impossible without XA, so consistency is
-eventual: the saga has a deadline and always ends in `completed` or `failed`. A delay
-in notifications does not affect money, because notifications decides nothing. The
-frontend compares versions, so an older live state never overrides fresher server
-data.
+eventual: the saga has a deadline, after which it compensates. A delay in
+notifications does not affect money, because notifications decides nothing. The
+frontend compares wallet versions and transfer update times, so an older live state
+never overrides fresher server data.
 
 ## Transfer saga
 
@@ -236,9 +233,13 @@ pending → checked → funds_held → confirmed → completed
                      compensating → failed
 ```
 
+A failure in `check` and a first hold rejection go straight to `failed`, because no
+money is on hold. Anything later goes through `compensating`.
+
 The worker claims due steps with `FOR UPDATE SKIP LOCKED`, sets a lease and applies
 the result with an optimistic `version` check. If a worker crashes, another picks the
-step up when the lease expires. All ledger calls are idempotent by `holdId`.
+step up when the lease expires. All hold operations in the ledger are idempotent by
+`holdId`.
 
 ### Compensation per step
 
@@ -253,7 +254,8 @@ step up when the lease expires. All ledger calls are idempotent by `holdId`.
 
 ### Stuck sagas
 
-- `SAGA_TIMEOUT_MS` (120 s) is the deadline for the whole transfer. After it, a
+- `LEDGER_TIMEOUT_MS` (3 s) limits each ledger call. `SAGA_TIMEOUT_MS` (120 s) is the
+  deadline for the whole transfer. After it, a
   `pending` transfer becomes `failed` and the rest go to compensation with the reason
   `timed_out`.
 - While the ledger is unavailable (timeout, connection error, 5xx, open circuit
@@ -263,8 +265,8 @@ step up when the lease expires. All ledger calls are idempotent by `holdId`.
 - Other errors are bounded by `SAGA_MAX_STEP_ATTEMPTS` (5), including a refused
   `INTERNAL_API_KEY`: that is a configuration error, so waiting for it to pass is
   pointless.
-- Verified by hand: with the ledger stopped for 29 s, the transfer stayed `pending`
-  and then finished as `completed` with nothing lost.
+- Covered by `saga-resilience.int-spec.ts`: `marks the transfer as awaiting a retry and
+  finishes it once the ledger is back`.
 
 ## Event schema and versioning
 
@@ -314,8 +316,9 @@ a changed amount or a new render after success gives a new one.
 ## Security
 
 - JWT access + refresh; the refresh token is stored hashed and rotated atomically.
-- Tokens live only in httpOnly cookies with `SameSite=Lax`. Server Actions check the
-  Origin, and logout rejects a foreign Origin.
+- Tokens are stored in httpOnly cookies with `SameSite=Lax`. The one exception is
+  `/api/ws-token`, which gives the access token to page JavaScript to open the
+  WebSocket. Server Actions check the Origin, and logout rejects a foreign Origin.
 - Ownership is checked on every wallet, transfer and bill request.
 - `/internal` is protected by `INTERNAL_API_KEY`, `/admin` by role.
 - Login rate limits: 5 attempts per client + email pair and 30 per client per minute.
@@ -326,7 +329,7 @@ a changed amount or a new render after success gives a new one.
   `TRUST_PROXY` allows it. Next.js does not overwrite the client's header, so in
   production a proxy that overwrites it must sit in front of the frontend.
 - Default values are meant for local development, so all ports are bound to
-  `127.0.0.1`. Containers run as the `node` user.
+  `127.0.0.1`. The service and frontend containers run as the `node` user.
 
 ## Server/Client Components boundary
 
@@ -339,8 +342,8 @@ capabilities are needed**: WebSocket, form state, retry control.
 | `LiveWallets`, `LiveTransfers`, `ActivityFeed`, `SagaProgress` | Client | receive SSR data as `initial`, then update over WebSocket |
 | `RealtimeProvider` | Client | one connection per app, a snapshot after reconnecting |
 | `TransferForm`, `PayShare` | Client + API route | the client controls `Idempotency-Key` and retries |
-| `DepositForm`, `SplitBillForm` | Server Actions | these mutations do not need real time |
-| Heavy dashboard and admin sections | `Suspense` | streaming, a slow section does not block the rest |
+| `OpenWalletForm`, `DepositForm`, `SplitBillForm` | Client form + Server Action | these mutations do not need real time |
+| Heavy dashboard, activity and admin sections | `Suspense` | streaming, a slow section does not block the rest |
 
 The existing login and wallet pages kept their approach: a Server Component for data
 and a route handler to set the httpOnly cookie. `/api/ws-token` issues the WebSocket
@@ -352,8 +355,8 @@ token, because the cookie is not readable from the browser.
   metadata) and the consumer. Jaeger: http://localhost:16686. The admin screen shows
   recent transfers and the time of each saga step.
 - **Logs.** Structured JSON with `traceId`; responses carry `X-Trace-Id`.
-- **Metrics.** `/metrics` in each service: HTTP, saga steps, breaker rejections,
-  processed events.
+- **Metrics.** `/metrics` in each NestJS service: HTTP, saga steps, breaker rejections,
+  published outbox events, processed events.
 - **Reconciliation.** `GET /admin/reconciliation` checks that debits and credits sum
   to zero for the period, that each operation balances, that projections match events,
   that balances match the sum of each account's postings, that held amounts match the
@@ -366,21 +369,17 @@ token, because the cookie is not readable from the browser.
 ```bash
 cd apps/<service>
 npm run lint:ci && npm run typecheck
-npm test                     # unit
-npm run test:int             # integration, needs Postgres and Redis
+npm test                     # unit, all except the frontend
+npm run test:int             # integration: ledger, payments and notifications
 ```
 
-Integration tests create a `<service>_test` database and reset its schema. E2e and
-load tests run against a running stack:
+Integration tests need Postgres and Redis. They create a `<service>_test` database and
+reset its schema. E2e and load tests run against a running stack:
 
 ```bash
 docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml up -d --build
 cd e2e && npm ci && npm test && npm run load
 ```
-
-Two e2e files access the databases directly. If the stack runs on non-default ports,
-set `LEDGER_DB_URL` and `PAYMENTS_DB_URL`, otherwise those tests connect to the
-databases on 5433 and 5434.
 
 | Spec §6 requirement | Where |
 |---|---|
@@ -389,7 +388,7 @@ databases on 5433 and 5434.
 | Compensation at every step | `payments-service/test/transfer-saga.spec.ts` |
 | Transfer, including conversion | `e2e/test/transfers.e2e-spec.ts` |
 | A step failing after the hold | same file: `releases the reserved funds when the recipient is blocked...` |
-| Repeated and concurrent key | `transfers.int-spec.ts`, `double-spend.e2e-spec.ts` |
+| Repeated and concurrent key | `payments-service/test/transfers.int-spec.ts`, `e2e/test/transfers.e2e-spec.ts` |
 | Postings sum to 0 after random operations | `ledger.int-spec.ts`, `reconciliation.e2e-spec.ts` |
 | Double spend under load | `e2e/load/double-spend.ts` |
 | Starter code problems | `wallets.int-spec.ts`, see [the table](#problems-found) |
@@ -412,10 +411,10 @@ macOS, all services on one machine, transfer limits raised through
 | Sender balance / held | 0.00 / 0.00 |
 | Recipient balance | 1000.00 of 1000.00 |
 | Reconciliation | ok |
-| Wall time | 5723 ms |
-| Settled sagas per second | 52.4 |
-| `POST /transfers` latency p50 / p95 / max | 788 / 1560 / 1595 ms |
-| Saga latency p50 / p95 / max | 2064 / 2940 / 3024 ms |
+| Wall time | 5215 ms |
+| Settled sagas per second | 57.5 |
+| `POST /transfers` latency p50 / p95 / max | 743 / 1266 / 1312 ms |
+| Saga latency p50 / p95 / max | 1592 / 2625 / 2697 ms |
 
 There was no double spend, and no money disappeared or was duplicated.
 
@@ -435,8 +434,8 @@ There was no double spend, and no money disappeared or was duplicated.
 - **Sessions.** One refresh token per user, with no detection of a stolen token being
   reused. Signing in on a second device ends the first session.
 - **A separate `fx-service`** with a real rate source.
-- **Frontend tests.** There are no separate component tests; the pure logic for merging
-  live data is tested in `e2e/test/live-merge.e2e-spec.ts`.
+- **Frontend tests.** There are no component tests; the pure logic for merging live
+  data and parsing participants is tested in `e2e/test/live-merge.e2e-spec.ts`.
 - **Idempotency keys** are kept forever. Production would have a retention policy.
 - **Health endpoints** on ledger and payments: compose waits for the container to
   start, not for the app to be ready.
