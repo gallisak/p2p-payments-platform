@@ -12,6 +12,7 @@ scratch. The project is built on top of the provided starter repository.
 - [Consistency model](#consistency-model)
 - [Transfer saga](#transfer-saga)
 - [Event schema and versioning](#event-schema-and-versioning)
+- [Transfer fields](#transfer-fields)
 - [Idempotency](#idempotency)
 - [Security](#security)
 - [Server/Client Components boundary](#serverclient-components-boundary)
@@ -151,7 +152,7 @@ All of these come from the event sourcing refactoring or from security fixes.
 | no endpoint to create a wallet | `POST /wallets` with a currency, idempotent; a recipient's wallet opens automatically | multiple currencies, spec 4.2 |
 | response had `balance` | added `held`, `blocked`, `version` | holds and blocking |
 | wallets could not be blocked | operations on a blocked wallet give 423 | spec 6: a blocked recipient |
-| `POST /transfers` was a stub | 202, `Idempotency-Key` required | spec 4.2 |
+| `POST /transfers` was a stub, `amount` and `currency` had no defined meaning | 202, `Idempotency-Key` required; `amount` is in the sender's wallet currency, `currency` is the recipient's currency | spec 4.2, see [transfer fields](#transfer-fields) |
 | `POST /auth/login` had no limit | 429 past the limit | spec 4.3 |
 | API error messages were in Ukrainian | English | the UI is in English |
 
@@ -170,11 +171,50 @@ gained new tests. In CI, `npm install` became `npm ci` and `npm run lint` became
 | 2 | **IDOR.** `getOne`, `deposit` and `withdraw` did not receive `ownerId` and worked on any wallet | controller review | `wallets.int-spec.ts`, the `ownership (IDOR)` block | queries always use `id` and `ownerId`; someone else's wallet gives 404 |
 | 3 | **Weak validation.** Amounts as floats with no precision limit, `:id` with no UUID check, balance compared through `Number` | DTO review | `wallets.int-spec.ts`, the `input validation` block | `IsMoneyAmount`, `ParseUUIDPipe`, whole cents in `bigint` |
 | 4 | **A test that passed by accident.** `does not allow withdrawing...` called `withdraw(...).catch(...)` with no `await` and no check that an error happened, so it could not fail | test review | `wallets.int-spec.ts`: `does not allow withdrawing more than the current balance` | the test was rewritten: it expects 400 and an unchanged balance, and the unawaited `.catch` is gone |
+| 5 | **The wallets page never sent the token.** The page called `ledgerFetch('/wallets')` with no `Authorization` header, so a signed-in user got a 401 and saw an error instead of their wallets | review of `app/wallets/page.tsx` and `lib/api.ts` | `frontend.e2e-spec.ts`: `shows the wallets of the signed-in user on the wallets page` | the page reads the access token from the session cookie and sends it with the request; pages now reach the API through the BFF the same way |
+| 6 | **`User` entity without a column type.** `refreshTokenHash: string \| null` compiles to `Object` in decorator metadata, so TypeORM stopped with `DataTypeNotSupportedError` on Postgres | running against Postgres | every `*.int-spec.ts` of ledger-service needs this entity | `type: 'varchar'` on the column |
 
-The fixes were made in `Fix/wallets idor validation (#2)` and
-`Fix/wallet double spend (#3)`. Mutation checks confirm that the tests for 1–4 really
-catch the problem: each fix was removed in a separate worktree, and the matching test
-went red.
+Problems 1–3 were fixed in `Fix/wallets idor validation (#2)` and
+`Fix/wallet double spend (#3)`, problem 5 in `Fix/frontend auth (#7)`, problem 6 in #2.
+Those pull requests were squashed, so the history of `main` holds each test and its
+fix in one commit.
+
+### Red, then green
+
+Branch `proof/starter-bugs` shows the order: it starts from the starter code, adds the
+tests first and then applies each fix in its own commit. Each commit was pushed
+separately, so the Actions tab has a CI run for each of them. The branch is not merged:
+a squash would join the tests and the fixes again.
+
+| Commit | What it does | Unit, ledger | Integration, ledger | Frontend |
+|---|---|---|---|---|
+| `e14e641` | adds the tests, no fixes | 7 of 16 fail | 4 of 4 fail | 1 of 1 fails |
+| `e1f266d` | problem 6 | 7 of 16 fail | 2 of 4 fail | 1 of 1 fails |
+| `461b3ec` | problem 2 | 4 of 16 fail | 2 of 4 fail | 1 of 1 fails |
+| `d49e053` | problem 3 | pass | 2 of 4 fail | 1 of 1 fails |
+| `46c493c` | problem 1 | pass | pass | 1 of 1 fails |
+| `daf00a9` | problem 5 | pass | pass | pass |
+
+At `e1f266d`, 20 concurrent withdrawals of 10 from a balance of 100 all succeed, and
+20 concurrent deposits of 0.10 leave far less than the expected 2.00. The exact result
+changes from run to run because this is a race.
+
+To reproduce it locally, check out a commit from the table and run:
+
+```bash
+docker run --rm -d --name proof-pg -e POSTGRES_USER=ledger -e POSTGRES_PASSWORD=ledger \
+  -e POSTGRES_DB=ledger -p 127.0.0.1:15440:5432 postgres:16-alpine
+cd apps/ledger-service && npm ci && npm test
+DATABASE_HOST=localhost DATABASE_PORT=15440 npm run test:int
+cd ../frontend && npm ci && npm test
+docker stop proof-pg
+```
+
+Problem 4 is a test defect, not a code defect, so a corrected test is green on the
+starter code as well. To see it, check out `5ed5030`, delete the
+`if (current < amount)` check from `withdraw` and run `npm test` in
+`apps/ledger-service`: the old test stays green with no balance check at all. In the
+branch the test is rewritten in `46c493c`.
 
 ## Design decisions
 
@@ -297,6 +337,24 @@ noise.
 does not change the balance, but it raises the stream version, so notifications
 refreshes its snapshot.
 
+## Transfer fields
+
+`POST /transfers` takes the amount in one currency and the target currency separately:
+
+| Field | Meaning |
+|---|---|
+| `fromWalletId` | the sender's wallet |
+| `toWalletIdentifier` | the recipient's email |
+| `amount` | how much leaves the sender's wallet, **in that wallet's currency** |
+| `currency` | **the recipient's currency**, which is not the currency of `amount` |
+
+Sending `{ "amount": 100, "currency": "EUR" }` from a USD wallet debits 100 USD and
+credits EUR at the current rate. The response has `fromCurrency`, `toCurrency`,
+`rate` and `creditAmount`, which is the amount the recipient gets, in their currency.
+`fromCurrency`, `rate` and `creditAmount` are `null` in the 202 response and appear once
+the first saga step has run. The same
+description is in Swagger, in both `bff` and `payments-service`.
+
 ## Idempotency
 
 | Where | Mechanism |
@@ -401,7 +459,7 @@ tests connect to the databases directly, so the last two matter as well.
 | Repeated and concurrent key | `payments-service/test/transfers.int-spec.ts`, `e2e/test/transfers.e2e-spec.ts` |
 | Postings sum to 0 after random operations | `ledger.int-spec.ts`, `reconciliation.e2e-spec.ts` |
 | Double spend under load | `e2e/load/double-spend.ts` |
-| Starter code problems | `wallets.int-spec.ts`, see [the table](#problems-found) |
+| Starter code problems | see [the table](#problems-found) and [red, then green](#red-then-green) |
 
 Key checks also went through mutation testing: the logic was broken on purpose to
 confirm that the test really fails.

@@ -66,6 +66,21 @@ describe('Frontend through the BFF (e2e)', () => {
     }
   });
 
+  it('shows the wallets of the signed-in user on the wallets page', async () => {
+    const user = await registerUser('wallets-page');
+    const walletId = await openWallet(user, 'EUR');
+    await call('POST', `${LEDGER_URL}/wallets/${walletId}/deposit`, { token: user.token, body: { amount: 123.45 } });
+    const browser = new Browser();
+    await browser.fetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: user.email, password: 'password123' }),
+    });
+
+    const page = await (await browser.fetch('/wallets')).text();
+
+    expect(page).toContain('123.45');
+  });
+
   it('keeps regular users out of the admin screen', async () => {
     const browser = await signUp(`user-${randomUUID()}@example.com`);
 
